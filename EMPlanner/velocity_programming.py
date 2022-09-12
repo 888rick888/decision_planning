@@ -3,6 +3,8 @@ import numpy as np
 import math
 from cmath import atan, isnan, nan, sqrt
 
+from EMPlanner.quadratic_programming import qp
+
 REFERRENCE_VELOCITY = 15
 
 class vp:
@@ -212,3 +214,133 @@ class vp:
         s_value = s_list[m - row]
         t_value = t_list[col]
         return s_value, t_value
+
+        #计算出s， s_dot, 的上下界，开辟凸空间供二次规划使用
+    def Convex_space(self, dp_speed_s, dp_speed_t, path_index2s, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, trajectory_kappa_init, max_lateral_accel):
+        n = 16  #dp_speed_s t 最多有16个
+        s_lb, s_ub = np.ones((n, 1)) * -99999, np.ones((n, 1)) * 999999
+        s_dot_lb, s_dot_ub = np.ones((n, 1)) * -99999, np.ones((n, 1)) * 99999
+        path_index2s_end_index = len(path_index2s)
+        dp_speed_end_index = len(dp_speed_s)
+
+        for k in range(1, len(path_index2s)):   #path_index2s也是有缓冲的，找到有效的path_index2s的末尾的位置，赋值给path_index2s_end_index
+            if path_index2s[k] == 0 and path_index2s[k-1] !=0:
+                path_index2s_end_index = k - 1
+                break
+            path_index2s_end_index = k
+
+        for k in range(len(dp_speed_s)):    #找到dp_speed_s中有效的位置，赋值给dp_speed_end_index
+            if isnan(dp_speed_s):
+                dp_speed_end_index = k - 1
+                break
+        
+        for i in range(n):  #施加车辆动力学约束
+            if isnan(dp_speed_s[i]):
+                break
+            cur_s = dp_speed_s[i]
+            cur_kappa = interp1(path_index2s[1:path_index2s_end_index], trajectory_kappa_init[1:path_index2s_end_index], cur_s) #插值找cur_s所对应的曲率
+            max_speed = sqrt(max_lateral_accel / abs(cur_kappa) + 1e-10)    #由a = v**2 * k
+            min_speed = 0
+            s_dot_lb[i] = min_speed
+            s_dot_ub[i] = max_speed
+
+        for i in range(len(obs_st_s_in_set)):
+            if isnan(obs_st_s_in_set[i]):
+                continue
+            obs_t = (obs_st_t_in_set[i] + obs_st_t_out_set[i]) / 2  #取s t直线的中点， 作为obs_s obs_t的坐标
+            obs_s = (obs_st_s_in_set[i] + obs_st_s_out_set[i]) / 2
+            obs_speed = (obs_st_s_out_set[i] - obs_st_s_in_set[i]) / (obs_st_t_out_set[i] - obs_st_t_in_set[i])     #计算障碍物的纵向速度
+            dp_s = interp1([0, dp_speed_t[1:dp_speed_end_index]],  [0, dp_speed_s[1:dp_speed_end_index], obs_t])    #插值找到当t = obs_t时， dp_speed_s 的值
+            for j in range(len(dp_speed_t) - 1):
+                if dp_speed_t[0] > obs_st_t_in_set[i]:  #如果障碍物切入时间比0.5秒还要短，那么t_lb_index = 1
+                    break
+                elif dp_speed_t[j] <= obs_st_t_in_set[i] and dp_speed_t[j+1]:   #否则遍历dp_speed_t 找到与obs_st_t_in_set[i]最近的点的编号
+                    break
+
+            t_lbindex = j   #将点的编号赋值给j
+            for j in range(len(dp_speed_t) - 1):    #找到dp_speed_t中与obs_st_t_out_set[i]最近的时间，并将此时间的编号赋值给t_ub_index
+                if dp_speed_t[1] > obs_st_t_out_set[i]:
+                    break
+                elif dp_speed_t[j] <= obs_st_t_out_set[i] and dp_speed_t[j + 1] > obs_st_t_out_set[i]:
+                    break
+            
+            t_ub_index = j  #这里稍微做个缓冲， 把t_lb_index稍微缩小一些，t_ub_index稍微放打一些
+            t_lb_index = max(t_lb_index -2 , 3) #最低为3， 因为碰瓷没法处理
+            t_ub_index = min(t_ub_index + 2, dp_speed_end_index)
+            if obs_s > dp_s:    #决策为减速避让
+                for m in range(t_lb_index, t_ub_index):     #在t_lb_index, t_ub_index的区间上，s的上界不可以超过障碍物st直线
+                    dp_t = dp_speed_t[m]
+                    s_ub[m] = min(s_ub[m], obs_st_s_in_set[i] + obs_speed * (dp_t - obs_st_t_in_set[i]))
+
+            else:   #决策为加速超车
+                for m in range(t_lb_index, t_ub_index):
+                    dp_t = dp_speed_t[m]
+                    s_lb[m] = max(s_lb[m], obs_st_s_in_set[i] + obs_speed * (dp_t - obs_st_t_in_set[i])) 
+        
+        return s_lb, s_ub, s_dot_lb, s_dot_ub
+
+    #速度二次规划
+    def qp_velocity(self, plan_start_s_dot, plan_start_s_dot2, dp_speed_s, dp_speed_t, s_lb, s_ub, s_dot_lb, s_dot_ub, w_cost_s_dot2, w_cost_v_ref, w_cost_jerk, speed_reference):
+        #输入：规划起点plan_start_s_dot, plan_start_s_dot2 ； 动态规划结果：dp_speed_s, dp_speed_t ； 凸空间约束s_lb, s_ub, s_dot_lb, s_dot_ub ； 加速度、推荐速度、jerk代价权重w_cost_s_dot2, w_cost_v_ref, w_cost_jerk
+        #输出：速度曲线
+        coder.extrinsic("quadprog")
+        dp_speed_end = 16   #由于dp的结果未必是16， 该算法将计算dp_speed_end到底是多少
+        for i in range(len(dp_speed_s)):
+            if isnan(dp_speed_s[i]):
+                dp_speed_end = i - 1
+                break
+        
+        n = 17 #由于dp_speed_end实际上是不确定的，但是输出要求必须是确定长度的值，因此输出初始化选择dp_speed_end的最大值 + 规划起点作为输出初始化的规模
+        qp_s_init, qp_s_dot_init, qp_s_dot2_init, relative_time_init = np.ones((n, 1)) * nan, np.ones((n, 1)) * nan, np.ones((n, 1)) * nan, np.ones((n, 1)) * nan
+        s_end = dp_speed_s[dp_speed_end]    
+        recommend_T = dp_speed_t[dp_speed_end]  #此时dp_speed_end表示真正有效的dp_speed_t的元素个数，取出dp_speed_t有效的最后一个元素作为规划的时间终点，记为recommend_T
+        qp_size = dp_speed_end + 1      #qp的规模应该是dp的有效元素的个数 + 规划起点
+        Aeq, beq = np.zeros((3*qp_size, 2*qp_size - 2)), np.zeros((2*qp_size - 2, 1))
+        lb, ub = np.ones((3*qp_size, 1)), lb
+        dt = recommend_T / dp_speed_end
+        A_sub = [[1, 0],
+                [dt, 1],
+                [(1/3)*dt**2, (1/2)*dt],
+                [-1, 0],
+                [0, -1], 
+                [(1/6)*dt**2, dt/2]]
+        
+        for i in range(qp_size - 1):
+           Aeq[3*i-2:3*i+3, 2*i-1:2*i] = A_sub
+        
+        A, b = np.zeros((qp_size-1, 3*qp_size)), np.zeros((qp_size - 1, 1))     #不允许倒车约束，即s(i) - s(i+1) <= 0
+        for i in range(qp_size - 1):
+            A[i, 3*i - 2], A[i, 3*i + 1] = 1, -1
+        
+        for i in range((1, qp_size)):   #由于生成的凸空间约束s_lb s_ub 不带起点(动态规划不带起点而二次规划带起点），所以lb(i) = s_lb(i-1)， 以此类推, 基于车辆动力学，最小加速度为-6，最大加速度为4
+            lb[3*i - 2] = s_lb[i-1]
+            lb[3*i - 1] = s_dot_lb[i-1]
+            lb[3*i] = -6
+            ub[3*i - 2] = s_ub[i-1]
+            ub[3*i - 1] = s_dot_ub[i-1]
+            ub[3*i] = 4
+        
+        lb[0], lb[1], lb[2] = 0, plan_start_s_dot, plan_start_s_dot2    #起点约束
+        ub[0], ub[1], ub[2] = lb[0], lb[1], lb[2]
+
+        A_s_dot2, A_jerk, A_ref = np.zeros((3*qp_size, 3*qp_size)), np.zeros((3*qp_size, qp_size - 1)), np.zeros((3*qp_size, 3*qp_size))
+        A4_sub = [0, 0, 1, 0, 0, -1]
+        for i in range(qp_size):
+            A_s_dot2[3*i][3*i], A_ref[3*i-1][3*i-1] = 1, 1
+        for i in range(qp_size-1):
+            A_jerk[3*i-2:3*i+3, i:i] = A4_sub
+        H = w_cost_s_dot2 * np.dot(A_s_dot2, A_s_dot2.T) + w_cost_jerk * np.dot(A_jerk, A_jerk.T) + w_cost_v_ref * np.dot(A_ref, A_ref.T)
+        H = 2 * H
+        f = np.zeros((3*qp_size, 1))
+        for i in range(qp_size):
+            f[3*i-1] = -2 * w_cost_v_ref * speed_reference
+
+        X = qpsolvers.solve_qp(H, f, A, b , Aeq, beq, lb, ub)
+
+        for i in range(qp_size):
+            qp_s_init[i] = X[3*i - 2]
+            qp_s_dot_init[i] = X[3*i - 1]
+            qp_s_dot2_init[i] = X[3*i]
+            relative_time_init[i] = (i - 1) * dt
+        
+        return qp_s_init, qp_s_dot_init, qp_s_dot2_init, relative_time_init
