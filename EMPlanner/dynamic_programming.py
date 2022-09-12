@@ -1,5 +1,6 @@
-from cmath import atan, isnan, sqrt
+from cmath import atan, isnan, nan, sqrt
 import numpy as np
+import qpsolvers 
 import math
 
 
@@ -111,6 +112,7 @@ class Dynamic_Planning:
                     stitch_speed[20-j+1, 21] = pre_trajectory_velocity[1: j+1]
                     stitch_accel[20-j+1, 21] = pre_trajectory_accel[1: j+1]
                     stitch_time[20-j+1, 21] = pre_trajectory_time[1: j+1]
+        return plan_start_x, plan_start_y, plan_start_heading, plan_start_kappa, plan_start_vx, plan_start_vy, plan_start_ax, plan_start_ay, plan_start_time, stitch_x, stitch_y, stitch_heading, stitch_kappa, stitch_speed, stitch_accel, stitch_time
 
     #计算index与s的转换，index2s（i）表示编号i对应的弧长s
     def index2s(self, path_x, path_y, origin_x, origin_y, origin_match_point_index):
@@ -122,6 +124,7 @@ class Dynamic_Planning:
         
         s0 = self.CalcSFromIndex2S(index2s, path_x, path_y, origin_x, origin_y, origin_match_point_index)
         index2s = index2s - np.ones((n, 1))*s0
+        return index2s
 
     #给定index2s的映射关系后，计算点（proj_x， proj_y）所对应的弧长，并判断投影点在匹配点的前面还是后面（向量内积
     def CalcSFromIndex2S(self, index2s, path_x, path_y, proj_x, proj_y, proj_match_point_index):
@@ -136,6 +139,7 @@ class Dynamic_Planning:
             s = index2s[proj_match_point_index] + sqrt(np.dot(vector_1_t, vector_1))
         else:
             s = index2s[proj_match_point_index] - sqrt(np.dot(vector_1_t, vector_1))
+        return s
 
     #计算世界坐标系下的x_set， y_set上的点在frenet_path下的坐标s
     def world2frenet_path(self, x_set, y_set, frenet_path_x, frenet_path_y, proj_x_set, proj_y_set, proj_heading_set, proj_match_point_index_set, index2s):
@@ -151,8 +155,9 @@ class Dynamic_Planning:
             n_r = [-math.sin(proj_heading_set[i]), math.cos(proj_heading_set[i])]
             r_h = [x_set[i], y_set[i]]
             r_r = [proj_x_set[i], proj_y_set[i]]
-            l_set[i] = np.dot(self.transposition(r_h - r_r), n_r
-)
+            l_set[i] = np.dot(self.transposition(r_h - r_r), n_r)
+        return s_set, l_set
+
     #计算frenet坐标系下的s_dot， l_dot, dl/ds
     def cal_dot(self, l_set, vx_set, vy_set, proj_heading_set, proj_kappa_set):
         n = 128
@@ -173,6 +178,7 @@ class Dynamic_Planning:
                 dl_set[i] = 0
             else:
                 dl_set[i] = l_dot_set [i]
+        return s_dot_set, l_dot_set, dl_set
 
     #计算s_dot2, l_dot2, ddl
     def cal_dot2(self, ax_set, ay_set, proj_heading_set, proj_kappa_set, l_set, s_dot_set, dl_set):
@@ -194,6 +200,7 @@ class Dynamic_Planning:
                 ddl_set[i] = 0
             else:
                 ddl_set[i] = (l_dot2_set[i] - dl_set[i] * s_dot2_set[i]) / (s_dot_set[i]**2)
+        return s_dot2_set, l_dot2_set, ddl_set
 
     #过滤静态障碍， 仅单车道
     def deal_with_obstacle(self, host_x, host_y, host_heading_xy, obs_x_set_gcs, obs_y_set_gcs, obs_velocity_set_gcs, obs_heading_set_gcs):
@@ -220,16 +227,17 @@ class Dynamic_Planning:
                 obs_heading_set_final[count] = obs_heading_set_gcs[i]
                 obs_velocity_set_final[count] = obs_velocity_set_gcs[i]
                 count += 1
+        return obs_x_set_final, obs_y_set_final, obs_velocity_set_final, obs_heading_set_final
 
     #筛选分类静态障碍物与动态障碍物
     def distinguish_obstacle(self, obs_x_set_gcs, obs_y_set_gcs, obs_heading_set_gcs, obs_velocity_set_gcs):
         n = 32
-        static_obs_x_set = np.ones((n, 1))
-        static_obs_y_set = np.ones((n, 1))
-        dynamic_obs_x_set = np.ones((n, 1))
-        dynamic_obs_y_set = np.ones((n, 1))
-        dynamic_obs_vx_set = np.ones((n, 1))
-        dynamic_obs_vy_set = np.ones((n, 1))
+        static_obs_x_set = np.ones((n, 1)) * nan
+        static_obs_y_set = np.ones((n, 1)) * nan
+        dynamic_obs_x_set = np.ones((n, 1)) * nan
+        dynamic_obs_y_set = np.ones((n, 1)) * nan
+        dynamic_obs_vx_set = np.ones((n, 1)) * nan
+        dynamic_obs_vy_set = np.ones((n, 1)) * nan
         count_static = 1
         count_dynamic = 1
 
@@ -242,6 +250,7 @@ class Dynamic_Planning:
                 dynamic_obs_x_set[count_dynamic] = obs_x_set_gcs[i]
                 dynamic_obs_y_set[count_dynamic] = obs_y_set_gcs[i]
                 count_dynamic += 1
+        return static_obs_x_set, static_obs_y_set, dynamic_obs_x_set, dynamic_obs_y_set, dynamic_obs_vx_set, dynamic_obs_vy_set
 
     #动态规划主函数
     def main_fun(self, obs_s_set, obs_l_set, plan_start_s, plan_start_l, plan_start_dl, plan_start_dll,
@@ -542,7 +551,7 @@ class Dynamic_Planning:
         hh = a3 + 100 * np.dot(a4, self.transposition(a4))
         hh = 2 * hh
         f = np.zeros((3 * n, 1))
-        xx = quadprog(hh, f, [], [], self.transposition(Aeq), beq, lb, ub)
+        xx = qpsolvers.solve_qp(hh, f, [], [], self.transposition(Aeq), beq, lb, ub)
         for i in range(n):
             s_init[i] = xx[3*i - 2]
             s_dot_init[i] = xx[3*i - 1]

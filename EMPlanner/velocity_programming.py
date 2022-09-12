@@ -2,6 +2,7 @@ from re import L
 import numpy as np
 import math
 from cmath import atan, isnan, nan, sqrt
+import qpsolvers
 
 from EMPlanner.quadratic_programming import qp
 
@@ -80,7 +81,7 @@ class vp:
         return obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set
 
         #速度的动态规划
-    def speed_dp(self, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, reference_speed_unlimit, w_cost_ref_speed, w_cost_accel, w_cost_obs, plan_start_s_dot):
+    def speed_dp(self, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, reference_speed, w_cost_ref_speed, w_cost_accel, w_cost_obs, plan_start_s_dot):
         #时间从0到8开始规划，最多8秒 ； s的范围从0开始到路径规划的path的总长度 ； 为减少算力，采用非均匀采样，越小的越密，越大的越稀疏
         s_list = [np.arange(start=0, stop=4.5, step=0.5), np.arange(start=5.5, stop=14.5, step=1), np.arange(start=16, stop=29.5, step=1.5), np.arange(start=32, stop=54.5, step=2.5)]
         s_list = np.reshape(s_list, (len(s_list, s_list[0])))
@@ -104,8 +105,8 @@ class vp:
                     pre_col = i - 1
                     cost_temp = self.CalcDPCost(self, pre_row, pre_col, cur_row, cur_col, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, w_cost_ref_speed, reference_speed, w_cost_accel, w_cost_obs, plan_start_s_dot, s_list, t_list, dp_st_s_dot)
 
-                    if cost_temp + dp_st_cost[pre_row][pre_col] < dp_cost[cur_row][cur_col]:
-                        dp_cost[cur_row][cur_col] = cost_temp + dp_st_cost[pre_row, pre_col]
+                    if cost_temp + dp_st_cost[pre_row][pre_col] < dp_st_cost[cur_row][cur_col]:
+                        dp_st_cost[cur_row][cur_col] = cost_temp + dp_st_cost[pre_row, pre_col]
                         #计算最优的s_dot
                         s_start, t_start = self.CalcSTCoordinate(pre_row, pre_col, s_list, t_list)
                         s_end, t_end = self.CalcSTCoordinate(cur_row, cur_col, s_list, t_list)
@@ -283,7 +284,7 @@ class vp:
     def qp_velocity(self, plan_start_s_dot, plan_start_s_dot2, dp_speed_s, dp_speed_t, s_lb, s_ub, s_dot_lb, s_dot_ub, w_cost_s_dot2, w_cost_v_ref, w_cost_jerk, speed_reference):
         #输入：规划起点plan_start_s_dot, plan_start_s_dot2 ； 动态规划结果：dp_speed_s, dp_speed_t ； 凸空间约束s_lb, s_ub, s_dot_lb, s_dot_ub ； 加速度、推荐速度、jerk代价权重w_cost_s_dot2, w_cost_v_ref, w_cost_jerk
         #输出：速度曲线
-        coder.extrinsic("quadprog")
+        # coder.extrinsic("quadprog")
         dp_speed_end = 16   #由于dp的结果未必是16， 该算法将计算dp_speed_end到底是多少
         for i in range(len(dp_speed_s)):
             if isnan(dp_speed_s[i]):

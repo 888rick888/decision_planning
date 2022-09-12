@@ -2,7 +2,7 @@ import numpy as np
 import math
 from cmath import atan, isnan, sqrt
 import cvxopt
-import qpsolvers 
+import qpsolvers
 
 W_COST_L = 5
 W_COST_DL = 50000
