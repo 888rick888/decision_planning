@@ -2,7 +2,7 @@ from cmath import atan, isnan, nan, sqrt
 import numpy as np
 import qpsolvers 
 import math
-
+from scipy import interpolate
 
 W_COST_COLLISION = 999999   #权重参数
 W_COST_SMOOTH_DL = 300
@@ -485,150 +485,150 @@ class Dynamic_Planning:
         return proj_x, proj_y, proj_heading, proj_kappa
 
 
-    ###############
-    #以下为速度规划部分(用于完善动态规划，不代表最终速度规划)
-    ###############
-    #计算trajectory的s 与x， y的对应关系，可以看作是trajectory index2s
-    def tra_correspond_xy(self, trajectory_x, trajectory_y):
-        n = len(trajectory_x)
-        path_s = np.zeros((n, 1))
-        sum = 0
+    # ###############
+    # #以下为速度规划部分(用于完善动态规划，不代表最终速度规划)
+    # ###############
+    # #计算trajectory的s 与x， y的对应关系，可以看作是trajectory index2s
+    # def tra_correspond_xy(self, trajectory_x, trajectory_y):
+    #     n = len(trajectory_x)
+    #     path_s = np.zeros((n, 1))
+    #     sum = 0
         
-        for i in range(1, len(trajectory_x)):
-            if isnan(trajectory_x[i]):
-                break
-            sum += sqrt((trajectory_x[i] - trajectory_x[i-1])**2 + (trajectory_y[i] - trajectory_y[i-1])**2)
-            path_s[i] = sum
+    #     for i in range(1, len(trajectory_x)):
+    #         if isnan(trajectory_x[i]):
+    #             break
+    #         sum += sqrt((trajectory_x[i] - trajectory_x[i-1])**2 + (trajectory_y[i] - trajectory_y[i-1])**2)
+    #         path_s[i] = sum
         
-        if i == n:
-            path_s_end = path_s[-1]
-        else:
-            path_s_end = path_s[i - 1]
+    #     if i == n:
+    #         path_s_end = path_s[-1]
+    #     else:
+    #         path_s_end = path_s[i - 1]
 
-        return path_s_end, path_s
+    #     return path_s_end, path_s
 
-    #计算速度规划的初始条件
-    def Calc_velocity_init(self, plan_start_vx, plan_start_vy, plan_start_ax, plan_start_ay, plan_start_heading):
-        tor = [math.cos(plan_start_heading), math.sin(plan_start_heading)]
-        v_t = np.dot(self.transposition(tor), [plan_start_vx, plan_start_vy])
-        a_t = np.dot(self.transposition(tor), [plan_start_ax, plan_start_ay])
-        plan_start_s_dot = v_t
-        plan_start_s_dot2 = a_t
-        return plan_start_s_dot, plan_start_s_dot2
+    # #计算速度规划的初始条件
+    # def Calc_velocity_init(self, plan_start_vx, plan_start_vy, plan_start_ax, plan_start_ay, plan_start_heading):
+    #     tor = [math.cos(plan_start_heading), math.sin(plan_start_heading)]
+    #     v_t = np.dot(self.transposition(tor), [plan_start_vx, plan_start_vy])
+    #     a_t = np.dot(self.transposition(tor), [plan_start_ax, plan_start_ay])
+    #     plan_start_s_dot = v_t
+    #     plan_start_s_dot2 = a_t
+    #     return plan_start_s_dot, plan_start_s_dot2
     
-    #简单的速度二次规划
-    def velocity_qp(self, plan_start_s_dot, plan_start_s_dot2, s_end, recommend_T):
-        # coder.extrinsic("quadprog")
-        n = 51
-        s_init, s_dot_init, s_dot2_init, relative_time_init = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
-        Aeq, beq = np.zeros((3*n, 2*n -2)), np.zeros((2*n - 2, 1))
-        lb = np.ones((3*n, 1))
-        ub = lb
-        dt = recommend_T/(n-1)
-        A_sub = [[1, 0], [dt, 1], [(1/3)*dt**2, (0.5*dt)], [-1, 0], [0, -1], [(1/6)*dt**2, dt/2]]
-        for i in range(n-1):
-            for o in range(len(A_sub)):
-                Aeq[3*i+o-2][2*i-1 : 2*i] = A_sub[o]
+    # #简单的速度二次规划
+    # def velocity_qp(self, plan_start_s_dot, plan_start_s_dot2, s_end, recommend_T):
+    #     # coder.extrinsic("quadprog")
+    #     n = 51
+    #     s_init, s_dot_init, s_dot2_init, relative_time_init = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
+    #     Aeq, beq = np.zeros((3*n, 2*n -2)), np.zeros((2*n - 2, 1))
+    #     lb = np.ones((3*n, 1))
+    #     ub = lb
+    #     dt = recommend_T/(n-1)
+    #     A_sub = [[1, 0], [dt, 1], [(1/3)*dt**2, (0.5*dt)], [-1, 0], [0, -1], [(1/6)*dt**2, dt/2]]
+    #     for i in range(n-1):
+    #         for o in range(len(A_sub)):
+    #             Aeq[3*i+o-2][2*i-1 : 2*i] = A_sub[o]
         
-        for i in range(n):
-            lb[3*i - 2] = -99999
-            lb[3*i - 1] = 0
-            lb[3*i] = -8
-            ub[3*i - 2] = 99999
-            ub[3*i - 1] = 50
-            ub[3*i] = 2
-        lb[0], lb[1], lb[2] = 0, plan_start_s_dot, plan_start_s_dot2
-        ub[0], ub[1], ub[2] = lb[0], lb[1], lb[2]
-        lb[3*n - 2] = s_end
-        ub[3*n - 2] = s_end
-        a3, a4 = np.zeros((3*n, 3*n))
-        A4_sub = [0, 0, 1, 0, 0, -1]
-        for i in range(n-1):
-            a3[3*n][3*n] = 1
-            for p in range(len(A4_sub)):
-                a4[3*i+p-2][i:i] = A4_sub[p]
-        a3[3*n][3*n] = 1
-        hh = a3 + 100 * np.dot(a4, self.transposition(a4))
-        hh = 2 * hh
-        f = np.zeros((3 * n, 1))
-        xx = qpsolvers.solve_qp(hh, f, [], [], self.transposition(Aeq), beq, lb, ub)
-        for i in range(n):
-            s_init[i] = xx[3*i - 2]
-            s_dot_init[i] = xx[3*i - 1]
-            s_dot2_init[i] = xx[3*i]
-            relative_time_init[i] = (i -1)* dt
+    #     for i in range(n):
+    #         lb[3*i - 2] = -99999
+    #         lb[3*i - 1] = 0
+    #         lb[3*i] = -8
+    #         ub[3*i - 2] = 99999
+    #         ub[3*i - 1] = 50
+    #         ub[3*i] = 2
+    #     lb[0], lb[1], lb[2] = 0, plan_start_s_dot, plan_start_s_dot2
+    #     ub[0], ub[1], ub[2] = lb[0], lb[1], lb[2]
+    #     lb[3*n - 2] = s_end
+    #     ub[3*n - 2] = s_end
+    #     a3, a4 = np.zeros((3*n, 3*n))
+    #     A4_sub = [0, 0, 1, 0, 0, -1]
+    #     for i in range(n-1):
+    #         a3[3*n][3*n] = 1
+    #         for p in range(len(A4_sub)):
+    #             a4[3*i+p-2][i:i] = A4_sub[p]
+    #     a3[3*n][3*n] = 1
+    #     hh = a3 + 100 * np.dot(a4, self.transposition(a4))
+    #     hh = 2 * hh
+    #     f = np.zeros((3 * n, 1))
+    #     xx = qpsolvers.solve_qp(hh, f, [], [], self.transposition(Aeq), beq, lb, ub)
+    #     for i in range(n):
+    #         s_init[i] = xx[3*i - 2]
+    #         s_dot_init[i] = xx[3*i - 1]
+    #         s_dot2_init[i] = xx[3*i]
+    #         relative_time_init[i] = (i -1)* dt
         
-        return s_init, s_dot_init, s_dot2_init, relative_time_init
+    #     return s_init, s_dot_init, s_dot2_init, relative_time_init
 
-    #增密s， s_dot， s_dot2
-    def add_density1(self, s_init, s_dot_init, s_dot2_init, relative_time_init):
-        tt = relative_time_init[-1]
-        n = 401
-        dt = tt/(n-1)
-        s, s_dot, s_dot2 = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
-        for i in range(n):
-            current_t = (i - 1)*dt
-            for j in range(len(relative_time_init - 1)):
-                if relative_time_init[j] <= current_t and relative_time_init[j+1] > current_t:
-                    break
-            x = current_t  - relative_time_init[j]
-            s[i] = s_init[j] + s_dot_init[j] * x + (1/3) * s_dot2_init[j] * x**2 + (1/6) * s_dot2_init[j+1] * x**2
-            s_dot[i] = s_dot_init[j] + 0.5*s_dot2_init[j]*x + 0.5 * s_dot2_init[j+1]*x
-            s_dot2[i] = s_dot2_init[j] + (s_dot2_init[j+1] - s_dot2_init[j]) * x / (relative_time_init[j+2] - relative_time_init[j])
-            # ................... 
+    # #增密s， s_dot， s_dot2
+    # def add_density1(self, s_init, s_dot_init, s_dot2_init, relative_time_init):
+    #     tt = relative_time_init[-1]
+    #     n = 401
+    #     dt = tt/(n-1)
+    #     s, s_dot, s_dot2 = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
+    #     for i in range(n):
+    #         current_t = (i - 1)*dt
+    #         for j in range(len(relative_time_init - 1)):
+    #             if relative_time_init[j] <= current_t and relative_time_init[j+1] > current_t:
+    #                 break
+    #         x = current_t  - relative_time_init[j]
+    #         s[i] = s_init[j] + s_dot_init[j] * x + (1/3) * s_dot2_init[j] * x**2 + (1/6) * s_dot2_init[j+1] * x**2
+    #         s_dot[i] = s_dot_init[j] + 0.5*s_dot2_init[j]*x + 0.5 * s_dot2_init[j+1]*x
+    #         s_dot2[i] = s_dot2_init[j] + (s_dot2_init[j+1] - s_dot2_init[j]) * x / (relative_time_init[j+2] - relative_time_init[j])
+    #         # ................... 
         
-        return s, s_dot, s_dot2, relative_time
+    #     return s, s_dot, s_dot2, relative_time
 
-    #合并path和speed
-    def merge_path_velocity(self, s, s_dot, s_dot2, relative_time, current_time, path_s, trajectory_x_init, trajectory_y_init, trajectory_heading_init, trajectory):
-        #path是60个点，speed有401个点，因此要做插值
-        n = 401
-        trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
-        index = 1
+    # #合并path和speed
+    # def merge_path_velocity(self, s, s_dot, s_dot2, relative_time, current_time, path_s, trajectory_x_init, trajectory_y_init, trajectory_heading_init, trajectory):
+    #     #path是60个点，speed有401个点，因此要做插值
+    #     n = 401
+    #     trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
+    #     index = 1
 
-        return trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time
+    #     return trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time
 
-    #轨迹拼接，将stitch trajectoruy拼到规划完成的轨迹上
-    def stitch_trajectory(self, trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time, 
-                        stitch_x, stitch_y, stitch_heading, stitch_kappa, stitch_speed, stitch_accel, stitch_time):
-        n = 401 + 20
-        trajectory_x_final, trajectory_y_final, trajectory_heading_final, trajectory_kappa_final, trajectory_speed_final, trajectory_accel_final, trajectory_time_final = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
-        trajectory_x_final = [stitch_x, trajectory_x]
-        trajectory_y_final = [stitch_y, trajectory_y]
-        trajectory_heading_final = [stitch_heading, trajectory_heading]
-        trajectory_kappa_final = [stitch_kappa, trajectory_kappa]
-        trajectory_speed_final = [stitch_speed, trajectory_speed]
-        trajectory_accel_final = [stitch_accel, trajectory_accel]
-        trajectory_time_final = [stitch_time, trajectory_time]
+    # #轨迹拼接，将stitch trajectoruy拼到规划完成的轨迹上
+    # def stitch_trajectory(self, trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time, 
+    #                     stitch_x, stitch_y, stitch_heading, stitch_kappa, stitch_speed, stitch_accel, stitch_time):
+    #     n = 401 + 20
+    #     trajectory_x_final, trajectory_y_final, trajectory_heading_final, trajectory_kappa_final, trajectory_speed_final, trajectory_accel_final, trajectory_time_final = np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1)), np.zeros((n, 1))
+    #     trajectory_x_final = [stitch_x, trajectory_x]
+    #     trajectory_y_final = [stitch_y, trajectory_y]
+    #     trajectory_heading_final = [stitch_heading, trajectory_heading]
+    #     trajectory_kappa_final = [stitch_kappa, trajectory_kappa]
+    #     trajectory_speed_final = [stitch_speed, trajectory_speed]
+    #     trajectory_accel_final = [stitch_accel, trajectory_accel]
+    #     trajectory_time_final = [stitch_time, trajectory_time]
 
-        return trajectory_x_final, trajectory_y_final, trajectory_heading_final, trajectory_kappa_final, trajectory_speed_final, trajectory_accel_final, trajectory_time_final
+    #     return trajectory_x_final, trajectory_y_final, trajectory_heading_final, trajectory_kappa_final, trajectory_speed_final, trajectory_accel_final, trajectory_time_final
 
-    #######
-    #control
-    #######
-    def trans2xryr(self, trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time, current_time):
-        #该函数根据规划的轨迹计算出期望跟踪的点，由于控制一样有延迟， 所以控制发出的期望跟踪的点是current_time + 0.01
-        control_time = current_time + 0.01
+    # #######
+    # #control
+    # #######
+    # def trans2xryr(self, trajectory_x, trajectory_y, trajectory_heading, trajectory_kappa, trajectory_speed, trajectory_accel, trajectory_time, current_time):
+    #     #该函数根据规划的轨迹计算出期望跟踪的点，由于控制一样有延迟， 所以控制发出的期望跟踪的点是current_time + 0.01
+    #     control_time = current_time + 0.01
 
-        #规划发出的轨迹有一部分是拼接的，在刚启动的时候，stitch_time = -1， 因此要把它去掉
-        start_index = 1
-        while trajectory_time[start_index] == -1:
-            start_index += 1
+    #     #规划发出的轨迹有一部分是拼接的，在刚启动的时候，stitch_time = -1， 因此要把它去掉
+    #     start_index = 1
+    #     while trajectory_time[start_index] == -1:
+    #         start_index += 1
         
-        #首次运行时，规划执行完的时候控制已经执行十次了，那么这十次中是空轨迹，这样轨迹中的trajectory_time也全是零，会导致interp1插值报错
-        if control_time > trajectory_time[start_index] and trajectory_time[start_index] != 0:
-            xr = interp1(trajectory_time[start_index:], trajectory_x[start_index:], control_time)
-            yr = interp1(trajectory_time[start_index:], trajectory_y[start_index:], control_time)
-            thetar = interp1(trajectory_time[start_index:], trajectory_heading[start_index:], control_time)
-            kappar = interp1(trajectory_time[start_index:], trajectory_kappa[start_index:], control_time)
-            vr = interp1(trajectory_time[start_index:], trajectory_speed[start_index:], control_time)
-            ar = interp1(trajectory_time[start_index:], trajectory_accel[start_index:], control_time)
-        else:
-            xr = trajectory_x[start_index]
-            yr = trajectory_y[start_index]
-            thetar = trajectory_heading[start_index]
-            kappar = trajectory_kappa[start_index]
-            vr = trajectory_speed[start_index]
-            ar = trajectory_accel[start_index]
+    #     #首次运行时，规划执行完的时候控制已经执行十次了，那么这十次中是空轨迹，这样轨迹中的trajectory_time也全是零，会导致interp1插值报错
+    #     if control_time > trajectory_time[start_index] and trajectory_time[start_index] != 0:
+    #         xr = interpolate(trajectory_time[start_index:], trajectory_x[start_index:], control_time)
+    #         yr = interpolate(trajectory_time[start_index:], trajectory_y[start_index:], control_time)
+    #         thetar = interpolate(trajectory_time[start_index:], trajectory_heading[start_index:], control_time)
+    #         kappar = interpolate(trajectory_time[start_index:], trajectory_kappa[start_index:], control_time)
+    #         vr = interpolate(trajectory_time[start_index:], trajectory_speed[start_index:], control_time)
+    #         ar = interpolate(trajectory_time[start_index:], trajectory_accel[start_index:], control_time)
+    #     else:
+    #         xr = trajectory_x[start_index]
+    #         yr = trajectory_y[start_index]
+    #         thetar = trajectory_heading[start_index]
+    #         kappar = trajectory_kappa[start_index]
+    #         vr = trajectory_speed[start_index]
+    #         ar = trajectory_accel[start_index]
 
-        return xr, yr, thetar, kappar, vr, ar
+    #     return xr, yr, thetar, kappar, vr, ar

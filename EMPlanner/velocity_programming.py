@@ -3,6 +3,7 @@ import numpy as np
 import math
 from cmath import atan, isnan, nan, sqrt
 import qpsolvers
+from scipy import interpolate
 
 from EMPlanner.quadratic_programming import qp
 
@@ -76,8 +77,6 @@ class vp:
                 obs_st_s_out_set[i] = dynamic_obs_s_set[i] + dynamic_obs_s_dot_set[i] *t_max
                 obs_st_t_in_set[i] = t_min
                 obs_st_t_out_set[i] = t_max
-
-
         return obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set
 
         #速度的动态规划
@@ -129,7 +128,7 @@ class vp:
                 min_cost = dp_st_cost
                 min_row = 1
                 min_col = j
-            
+
         #这里要注意，虽然我们在t上每0.5s 采样一个时间，采了16个点，但是min_col未必等于16， 也就是说动态规划的最优解的时间未必是8秒
         dp_speed_s[min_col], dp_speed_t[min_col] = self.CalcSTCoordinate(min_row, min_col, s_list, t_list)  #先计算终点
         while min_col != 1:     #回溯
@@ -139,7 +138,6 @@ class vp:
             min_row, min_col = pre_row, pre_col
         
         return dp_speed_s, dp_speed_t
-
 
         #计算连接两个节点之间的边的代价
     def CalcDPCost(self, row_start, col_start, row_end, col_end, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, w_cost_ref_speed, reference_speed, w_cost_accel, w_cost_obs, plan_start_s_dot, s_list, t_list, dp_st_s_dot):
@@ -234,12 +232,12 @@ class vp:
             if isnan(dp_speed_s):
                 dp_speed_end_index = k - 1
                 break
-        
+
         for i in range(n):  #施加车辆动力学约束
             if isnan(dp_speed_s[i]):
                 break
             cur_s = dp_speed_s[i]
-            cur_kappa = interp1(path_index2s[1:path_index2s_end_index], trajectory_kappa_init[1:path_index2s_end_index], cur_s) #插值找cur_s所对应的曲率
+            cur_kappa = interpolate(path_index2s[1:path_index2s_end_index], trajectory_kappa_init[1:path_index2s_end_index], cur_s) #插值找cur_s所对应的曲率
             max_speed = sqrt(max_lateral_accel / abs(cur_kappa) + 1e-10)    #由a = v**2 * k
             min_speed = 0
             s_dot_lb[i] = min_speed
@@ -251,7 +249,7 @@ class vp:
             obs_t = (obs_st_t_in_set[i] + obs_st_t_out_set[i]) / 2  #取s t直线的中点， 作为obs_s obs_t的坐标
             obs_s = (obs_st_s_in_set[i] + obs_st_s_out_set[i]) / 2
             obs_speed = (obs_st_s_out_set[i] - obs_st_s_in_set[i]) / (obs_st_t_out_set[i] - obs_st_t_in_set[i])     #计算障碍物的纵向速度
-            dp_s = interp1([0, dp_speed_t[1:dp_speed_end_index]],  [0, dp_speed_s[1:dp_speed_end_index], obs_t])    #插值找到当t = obs_t时， dp_speed_s 的值
+            dp_s = interpolate([0, dp_speed_t[1:dp_speed_end_index]],  [0, dp_speed_s[1:dp_speed_end_index], obs_t])    #插值找到当t = obs_t时， dp_speed_s 的值
             for j in range(len(dp_speed_t) - 1):
                 if dp_speed_t[0] > obs_st_t_in_set[i]:  #如果障碍物切入时间比0.5秒还要短，那么t_lb_index = 1
                     break
