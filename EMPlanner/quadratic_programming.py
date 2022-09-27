@@ -24,7 +24,7 @@ class qp:
         l_min, l_max = np.ones((60, 1)) * -6, np.ones((60, 1)) * 6  #如果无障碍，l的边界一般默认为±6
 
         for i in range(len(static_obs_s_set)):
-            if isnan(static_obs_s_set):
+            if isnan(static_obs_s_set[i]):
                 break
 
             obs_s_min = static_obs_s_set[i] - static_obs_length / 2     #计算障碍物头尾部的s
@@ -42,13 +42,11 @@ class qp:
                 for j in range(start_index, end_index + 1):
                     l_min[j] = max(l_min[j], l_min[j] + static_obs_l_set[i] + static_obs_width / 2)
             else:
-                for j in range(start_index, end_index + 1):
+                for j in range(start_index, end_index + 1): 
                     l_max[j] = min(l_max[j], static_obs_l_set[j] - static_obs_width / 2)
-
-
         return l_min, l_max
 
-    #该函数将找到dp_path_s上所有点中， 与pns_S最近的点，并返回该点在dp_path_s的编号
+    #该函数将找到dp_path_s上所有点中， 与obs_s最近的点，并返回该点在dp_path_s的编号
     def find_near_index(self, dp_path_s, obs_s):
         #dp_path_s是动态规划的结果，值在0到59， 但是obs_s是障碍物在参考线上的投影点，所以obs_s有可能小于零，也有可能大于59
         if dp_path_s[0] >= obs_s:

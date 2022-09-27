@@ -1,0 +1,31 @@
+ego_state_topic_name: /ego_state
+rline_topic_name: /rline
+obstacles_topic_name: /obstacles
+
+trajectory_topic_name: /trajectory/dp_line
+
+node_rate: 10
+
+viz: true
+viz_trajectory_topic_name: /viz/trajectory/dp_line
+
+#for dp
+w_cost_collision: 999999
+w_cost_smooth_dl: 300
+w_cost_smooth_ddl: 2000
+w_cost_smooth_dddl: 10000
+w_cost_ref: 20
+row: 9
+col: 6
+sample_s: 10
+smaple_l: 1
+
+#for qp
+w_cost_l: 5
+w_cost_dl: 50000
+w_cost_ddl: 300
+w_cost_dddl: 15
+w_cost_centre: 1200
+w_cost_end_l: 40
+w_cost_end_dl: 40
+w_cost_end_ddl: 40

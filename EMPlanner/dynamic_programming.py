@@ -195,7 +195,7 @@ class Dynamic_Planning:
             n_r = [-math.sin(proj_heading_set[i]), math.cos(proj_heading_set[i])]
             t_r = [math.cos(proj_heading_set[i]), math.sin(proj_heading_set[i])]
             l_dot2_set[i] = np.dot(self.transposition(a_h), n_r - proj_kappa_set[i] * (1 - proj_kappa_set[i] * l_set))
-            s_dot2_set[i] = (1 / (1 - proj_heading_set[i] * l_set[i])) * np.dot((self.transposition(a_h), t_r) + 2 * proj_kappa_set[i] * dl_set[i] * s_dot2_set[i])
+            s_dot2_set[i] = (1 / (1 - proj_heading_set[i] * l_set[i])) * np.dot((self.transposition(a_h), t_r)) + 2 * proj_kappa_set[i] * dl_set[i] * s_dot2_set[i]
             if abs(s_dot2_set[i]) < 1e-6:
                 ddl_set[i] = 0
             else:
@@ -355,10 +355,11 @@ class Dynamic_Planning:
         ds, l, dl, ddl, dddl = np.zeros((10, 1)), np.zeros((10, 1)), np.zeros((10, 1)), np.zeros((10, 1)), np.zeros((10, 1))
         for i in range(len(ds)):
             ds[i] = start_s + (i - 1) * sample_s/10
+
         l = a0 * np.ones((10, 1)) + a1 * ds + a2 * ds**2 + a3 * ds**3 + a4 * ds**4 + a5 * ds**5
         dl = a1 * np.ones((10, 1)) + 2 * a2 *ds + 3 * a3 * ds**2 + 4 * a4 * ds**3 + 5 * a5 * ds**4
-        ddl = 2 * a2 * np.ones((10, 1)) + 6 * a4 * ds + 12 * a4 * ds **2 + 20 * a5 * ds**3
-        dddl = 6 * np.ones((10, 1)) * a3 + 24 * a4*ds + 60 * a5 * ds**2
+        ddl = 2 * a2 * np.ones((10, 1)) + 6 * a3 * ds + 12 * a4 * ds **2 + 20 * a5 * ds**3
+        dddl = 6 * np.ones((10, 1)) * a3 + 24 * a4 * ds + 60 * a5 * ds**2
         cost_smooth = w_cost_smooth_dl * np.dot(dl.T, dl) + w_cost_smooth_ddl * np.dot(ddl.T, ddl) + w_cost_smooth_dddl * np.dot(dddl.T, dddl)
         cost_ref = w_cost_ref * np.dot(l.T, l)
         cost_collision = 0
@@ -416,7 +417,7 @@ class Dynamic_Planning:
         for i in range(len(dp_path_s_init)):
             if dp_path_s_init[i] == -1:
                 break
-            for j in range(10000):  #采样s
+            for j in range(1, 10000):  #采样s
                 s_node = start_s + ds * (j - 1)
                 if s_node < dp_path_s_init[i]:
                     s_cur = [s_cur, s_node]
@@ -471,12 +472,12 @@ class Dynamic_Planning:
     #计算在frenet坐标系下，点s， l在frenet坐标轴的投影的直角坐标（proj_x, proj_y, proj_heading, proj_kappa）
     def CalcProjPoint(self, s, frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s):
         match_index = 0
-        while self.index2s(match_index) < s:
+        while index2s[match_index] < s:
             match_index += 1
         match_point = [frenet_path_x[match_index], frenet_path_y[match_index]]
         match_point_heading = frenet_path_heading[match_index]
         match_point_kappa = frenet_path_kappa[match_index]
-        ds = s - self.index2s(match_index)
+        ds = s - index2s[match_index]
         match_tor = [math.cos(match_point_heading), math.sin(match_point_heading)]
         proj_point = match_point + ds * match_tor
         proj_heading = match_point_heading + ds * match_point_kappa
