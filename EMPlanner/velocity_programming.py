@@ -1,4 +1,3 @@
-from re import L
 import numpy as np
 import math
 from cmath import atan, isnan, nan, sqrt
@@ -291,7 +290,7 @@ class vp:
         
         n = 17 #由于dp_speed_end实际上是不确定的，但是输出要求必须是确定长度的值，因此输出初始化选择dp_speed_end的最大值 + 规划起点作为输出初始化的规模
         qp_s_init, qp_s_dot_init, qp_s_dot2_init, relative_time_init = np.ones((n, 1)) * nan, np.ones((n, 1)) * nan, np.ones((n, 1)) * nan, np.ones((n, 1)) * nan
-        s_end = dp_speed_s[dp_speed_end]    
+        s_end = dp_speed_s[dp_speed_end]
         recommend_T = dp_speed_t[dp_speed_end]  #此时dp_speed_end表示真正有效的dp_speed_t的元素个数，取出dp_speed_t有效的最后一个元素作为规划的时间终点，记为recommend_T
         qp_size = dp_speed_end + 1      #qp的规模应该是dp的有效元素的个数 + 规划起点
         Aeq, beq = np.zeros((3*qp_size, 2*qp_size - 2)), np.zeros((2*qp_size - 2, 1))
@@ -343,3 +342,87 @@ class vp:
             relative_time_init[i] = (i - 1) * dt
         
         return qp_s_init, qp_s_dot_init, qp_s_dot2_init, relative_time_init
+
+    # 该函数将增密s s_dot s_dot2
+    def add_density_s(self, s_init,s_dot_init,s_dot2_init,relative_time_init):
+        t_end  = len(relative_time_init)
+        for i in range(t_end):
+            if isnan(relative_time_init[i]):
+                t_end = i - 1
+                break
+        T = relative_time_init[t_end]
+        n = 401
+        dt = T / (n - 1)
+        s = np.zeros(n, 1)
+        s_dot = np.zeros(n, 1)
+        s_dot2 = np.zeros(n, 1)
+        relative_time = np.zeros(n, 1)
+
+        for i in range(n):
+            current_t = (i - 1) * dt
+            for j in range(t_end - 1):
+                if relative_time_init[j] <= current_t and relative_time_init[j+1] > current_t:
+                    break
+            
+            x = current_t - relative_time_init[j]
+            s[i] = s_init[i] + s_dot_init[j] * x + (1/3) * s_dot2_init[j] * x**2 + (1/6) * s_dot2_init[j+1] * x**2
+            s_dot[i] = s_dot_init[j] + 0.5 * s_dot2_init[j] * x + 0.5 * s_dot2_init[j+1] * x
+            s_dot2[i] = s_dot2_init[j] + (s_dot2_init[j+1] - s_dot2_init[j]) * x / (relative_time_init[j+1] - relative_time_init[j])
+            relative_time[i] = current_t
+
+        return s,s_dot,s_dot2,relative_time
+
+        # 该函数将合并path和speed
+        # 由于path 是 60个点，speed 有 401个点，合并后，path和speed有401个点，因此需要做插值
+    def merge_path_velocity(self, s,s_dot,s_dot2,relative_time,current_time,path_s,trajectory_x_init,trajectory_y_init,trajectory_heading_init,trajectory_kappa_init):
+        n = 401
+        trajectory_x = np.zeros(n, 1)
+        trajectory_y = np.zeros(n, 1)
+        trajectory_heading  = np.zeros(n, 1)
+        trajectory_kappa = np.zeros(n, 1)
+        trajectory_speed = np.zeros(n, 1)
+        trajectory_accel = np.zeros(n, 1)
+        index = 1
+
+        while not isnan(trajectory_x_init[index]):
+            index += 1
+        index -= 1
+        trajectory_time = np.zeros(n, 1)
+
+        for i in range(n-1):
+            trajectory_x[i] = interpolate(path_s[1:index], trajectory_x_init[1:index], s[i])
+            trajectory_y[i] = interpolate(path_s[1:index], trajectory_y_init[1:index], s[i])
+            trajectory_heading[i] = interpolate(path_s[1:index], trajectory_heading_init[1:index], s[i])
+            trajectory_kappa[i] = interpolate(path_s[1:index], trajectory_kappa_init[1:index], s[i])
+            trajectory_time[i] = relative_time[i] + current_time
+            trajectory_speed[i] = s_dot[i]
+            trajectory_accel[i] = s_dot2[i]
+        
+        trajectory_x[-1] = trajectory_x_init[-1]
+        trajectory_y[-1] = trajectory_y_init[-1]
+        trajectory_heading[-1] = trajectory_heading_init[-1]
+        trajectory_kappa[-1] = trajectory_kappa_init[-1]
+        trajectory_time[-1] = relative_time[-1] + current_time
+        trajectory_speed[-1] = s_dot[-1]
+        trajectory_accel[-1] = s_dot2[-1]
+        
+        return trajectory_x,trajectory_y,trajectory_heading,trajectory_kappa,trajectory_speed,trajectory_accel,trajectory_time
+
+    def stitch_trajectory(self, trajectory_x, trajectory_y,trajectory_heading,trajectory_kappa,trajectory_speed,trajectory_accel,trajectory_time, stitch_x,stitch_y,stitch_heading,stitch_kappa,stitch_speed,stitch_accel,stitch_time):
+        n = 401 + 20
+        trajectory_x_final = np.zeros(n, 1)
+        trajectory_y_final = np.zeros(n, 1)
+        trajectory_heading_final = np.zeros(n, 1)
+        trajectory_kappa_final = np.zeros(n, 1)
+        trajectory_speed_final = np.zeros(n, 1)
+        trajectory_accel_final = np.zeros(n, 1)
+        trajectory_time_final = np.zeros(n, 1)
+
+        trajectory_x_final = [stitch_x, trajectory_x]
+        trajectory_y_final = [stitch_y, trajectory_y]
+        trajectory_heading_final = [stitch_heading, trajectory_heading]
+        trajectory_kappa_final = [stitch_kappa, trajectory_kappa]
+        trajectory_speed_final = [stitch_speed, trajectory_speed]
+        trajectory_accel_final = [stitch_accel, trajectory_accel]
+        trajectory_time_final = [stitch_time, trajectory_time]
+        return trajectory_x_final,trajectory_y_final,trajectory_heading_final,trajectory_kappa_final, trajectory_speed_final,trajectory_accel_final,trajectory_time_final

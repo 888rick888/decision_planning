@@ -458,7 +458,7 @@ class Dynamic_Planning:
         for i in range(len(s_set)):
             if isnan(s_set[i]):
                 break
-            proj_x, proj_y, proj_heading, proj_kappa = self.CalcProjPoint(s_set[i], frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s)
+            proj_x, proj_y, proj_heading, proj_kappa = self.CalcProjPoint_of_s(s_set[i], frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s)
             nor = [-math.sin(proj_heading), math.cos(proj_heading)]
             point = [proj_x, proj_y] + l_set[i] * nor
             x_set[i] = point[0]
@@ -470,7 +470,7 @@ class Dynamic_Planning:
         return x_set, y_set, heading_set, kappa_set
     
     #计算在frenet坐标系下，点s， l在frenet坐标轴的投影的直角坐标（proj_x, proj_y, proj_heading, proj_kappa）
-    def CalcProjPoint(self, s, frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s):
+    def CalcProjPoint_of_s(self, s, frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s):
         match_index = 0
         while index2s[match_index] < s:
             match_index += 1
@@ -484,6 +484,206 @@ class Dynamic_Planning:
         proj_kappa = match_point_kappa
         proj_x, proj_y = proj_point[0], proj_point[1]
         return proj_x, proj_y, proj_heading, proj_kappa
+
+    def find_match_proj_point(self, x_set,y_set,frenet_path_x,frenet_path_y,frenet_path_heading,frenet_path_kappa):
+        # %该函数将批量计算x_set，y_set中的xy，在frenet_path下的投影的信息
+        # %输入 x_set,y_set，待投影的点的集合
+        # %x_set,y_set,frenet_path_x,frenet_path_y,frenet_path_heading,frenet_path_kappa
+        # %曲线在直角坐标系下的x，y，heading，kappa
+        # %输出：match_point_index_set 匹配点在frenet_path下的编号的集合(即从全局路径第一个点开始数，第几个点是匹配点)
+        # %     proj_x y heading kappa 投影的x,y,heading,kappa的集合
+
+        # % 由于事先不知道x_set中到底有多少个点需要投影，因此事先声明一个最大的数量的点作为缓冲
+        n = 128
+        # % 并且由于不知道投影点的个数，所以也不知道输出的个数，因此输出也要做缓冲，用nan表示不存在的点, 输出最多输出128个
+        match_point_index_set = np.ones(n,1) * nan
+        proj_x_set = np.ones(n,1) * nan
+        proj_y_set = np.ones(n,1) * nan
+        proj_heading_set = np.ones(n,1) * nan
+        proj_kappa_set = np.ones(n,1) * nan
+
+        # % 找匹配点，需要利用上一个周期的结果作为下一个周期遍历的起点，因此需要声明两个全局变量
+
+        # persistent is_first_run;
+        # persistent pre_match_point_index_set;%bug :pre_match_point_index[i] 未必代表的是第i个障碍物的match_point_index
+        # persistent pre_frenet_path_x;
+        # persistent pre_frenet_path_y;
+        # persistent pre_frenet_path_heading;
+        # persistent pre_frenet_path_kappa;
+        # persistent pre_x_set;
+        # persistent pre_y_set;
+
+        if (is_first_run):
+            # %该if分支表示函数首次运行
+            is_first_run = 0
+            pre_frenet_path_x = frenet_path_x
+            pre_frenet_path_y = frenet_path_y
+            pre_frenet_path_heading = frenet_path_heading
+            pre_frenet_path_kappa = frenet_path_kappa
+            # %要记录首次运行计算的匹配点的结果供下个周期运行，先初始
+            pre_match_point_index_set = np.ones(n,1) * nan
+            # %对x_set,y_set的点做遍历，找到他们的匹配点
+            for i in range(len(x_set)):
+                if isnan(x_set[i]):
+                    break
+                # %首次运行时，没有任何提示，只能从frenet path的第一个点开始找
+                start_search_index = 1
+                # % 声明increase_count，用于表示在遍历时distance连续增加的个数
+                increase_count = 0
+                # % 开始遍历
+                min_distance = 99999
+                for j in range(start_search_index,len(frenet_path_x)):
+                    distance = (x_set[i] - frenet_path_x[j])**2 + (y_set[i] - frenet_path_y[j])**2
+                    if distance < min_distance:
+                        min_distance = distance
+                        match_point_index_set[i] = j
+                        increase_count = 0
+                    else:
+                        increase_count = increase_count + 1
+                    # %如果distance连续增加50次就不要再遍历了，节省时间
+                    if increase_count > 50:
+                        break
+                
+                # %如何通过匹配点计算投影点，请参见《自动驾驶控制算法第七讲》
+                # %或《自动驾驶决策规划算法》第一章第三节
+                
+                # %取出匹配点的编号
+                match_point_index = match_point_index_set[i]
+                # %取出匹配点的信息
+                match_point_x = frenet_path_x(match_point_index)
+                match_point_y = frenet_path_y(match_point_index)
+                match_point_heading = frenet_path_heading(match_point_index)
+                match_point_kappa = frenet_path_kappa(match_point_index)
+                # %计算匹配点的方向向量与法向量
+                vector_match_point = [match_point_x, match_point_y]
+                vector_match_point_direction = [math.cos(match_point_heading), math.sin(match_point_heading)]
+                # %声明待投影点的位矢
+                vector_r = [x_set[i], y_set[i]]
+                
+            # %通过匹配点计算投影点
+            vector_d = vector_r - vector_match_point
+            ds = vector_d.T * vector_match_point_direction
+            vector_proj_point = vector_match_point + ds * vector_match_point_direction
+            proj_heading = match_point_heading + match_point_kappa * ds
+            proj_kappa = match_point_kappa
+            # %计算结果输出
+            proj_x_set[i] = vector_proj_point(1)
+            proj_y_set[i] = vector_proj_point(2)
+            proj_heading_set[i] = proj_heading
+            proj_kappa_set[i] = proj_kappa
+            # %匹配点的计算结果保存，供下一个周期使用
+            pre_match_point_index_set = match_point_index_set
+            pre_x_set = x_set
+            pre_y_set = y_set
+        else:
+            # %此if分支表示不是首次运行
+            # %对每个x_set上的点做处理
+            for i in range(len(x_set)):
+                # %不是首次运行，对于点x_set[i],y_set[i]来说,start_search_index = pre_match_point_index_set[i]
+                start_search_index = pre_match_point_index_set[i]      #上个周期匹配点的编号作为本周期搜索的起点
+                # % 判断帧与帧之间的障碍物是否为同一个
+                square_dis = (x_set[i] - pre_x_set[i])**2 + (y_set[i] - pre_y_set[i])**2
+                if square_dis > 36:
+                    # % 帧与帧之间的物体的位置距离过大，认为是两个障碍物
+                    start_search_index = nan
+                # % 声明increase_count，用于表示在遍历时distance连续增加的个数
+                # %对于障碍物检测而言，当感知第一次检测到障碍物时，算法并不是首次运行，此时pre_match_point_index_set的值是nan，如果还用上一时刻的结果作为本周期搜索的起点, 必然会出问题，所以要修改
+                # % 声明increase_count_limit
+                increase_count_limit = 5
+                if isnan(start_search_index):
+                    # %没有上个周期的结果，那就不能只检查5次了
+                    increase_count_limit = 50
+                    # %搜索起点也要设为1
+                    start_search_index = 1
+                increase_count = 0
+                # % 开始遍历
+                # %这里多一个步骤，判断遍历的方向
+                # %计算上个周期匹配点的位矢
+                vector_pre_match_point = [pre_frenet_path_x[start_search_index], pre_frenet_path_y[start_search_index]]
+                vector_pre_match_point_direction = [math.cos(pre_frenet_path_heading[start_search_index]), math.sin(pre_frenet_path_heading[start_search_index])];
+                # %判断遍历的方向
+                flag = ([x_set[i], y_set[i]] - vector_pre_match_point).T * vector_pre_match_point_direction
+                min_distance = 99999
+                if flag > 0.001:
+                    for j in range(start_search_index, len(frenet_path_x)):
+                        distance = (x_set[i] - frenet_path_x[j])**2 + (y_set[i] - frenet_path_y[j])**2
+                        if distance < min_distance:
+                            min_distance = distance
+                            match_point_index_set[i] = j
+                            increase_count = 0
+                        else:
+                            increase_count = increase_count + 1
+                        # %如果distance连续增加increase_count_limit次就不要再遍历了，节省时间
+                        if increase_count > increase_count_limit:
+                            break
+                elif flag < - 0.001:
+                    for j in range(start_search_index, 0, -1):
+                        distance = (x_set[i] - frenet_path_x[j])**2 + (y_set[i] - frenet_path_y[j])**2
+                        if distance < min_distance:
+                            min_distance = distance
+                            match_point_index_set[i] = j
+                            increase_count = 0
+                        else:
+                            increase_count = increase_count + 1
+                        # %如果distance连续增加increase_count_limit次就不要再遍历了，节省时间
+                        if increase_count > increase_count_limit:
+                            break
+                else:
+                    match_point_index_set[i] = start_search_index
+                
+                # %如何通过匹配点计算投影点，请参见《自动驾驶控制算法第七讲》
+                # %或《自动驾驶决策规划算法》第一章第三节
+                
+                # %取出匹配点的编号
+                match_point_index = match_point_index_set[i]
+                # %取出匹配点的信息
+                match_point_x = frenet_path_x(match_point_index)
+                match_point_y = frenet_path_y(match_point_index)
+                match_point_heading = frenet_path_heading(match_point_index)
+                match_point_kappa = frenet_path_kappa(match_point_index)
+                # %计算匹配点的方向向量与法向量
+                vector_match_point = [match_point_x,match_point_y]
+                vector_match_point_direction = [math.cos(match_point_heading),,math.sin(match_point_heading)]
+                # %声明待投影点的位矢
+                vector_r = [x_set[i],y_set[i]]
+                
+            # %通过匹配点计算投影点
+            vector_d = vector_r - vector_match_point
+            ds = vector_d.T * vector_match_point_direction
+            vector_proj_point = vector_match_point + ds * vector_match_point_direction
+            proj_heading = match_point_heading + match_point_kappa * ds
+            proj_kappa = match_point_kappa
+            # %计算结果输出
+            proj_x_set[i] = vector_proj_point[1]
+            proj_y_set[i] = vector_proj_point[2]
+            proj_heading_set[i] = proj_heading
+            proj_kappa_set[i] = proj_kappa
+    
+            # %匹配点的计算结果保存，供下一个周期使用
+            pre_match_point_index_set = match_point_index_set
+            pre_frenet_path_x = frenet_path_x
+            pre_frenet_path_y = frenet_path_y
+            pre_frenet_path_heading = frenet_path_heading
+            pre_frenet_path_kappa = frenet_path_kappa
+            pre_x_set = x_set
+            pre_y_set = y_set
+        return match_point_index_set,proj_x_set, proj_y_set,proj_heading_set,proj_kappa_set
+
+
+    def main_dp(self):
+        while True:
+            plan_start_x, plan_start_y, plan_start_heading, plan_start_kappa, plan_start_vx, plan_start_vy, plan_start_ax, plan_start_ay, plan_start_time, 
+            stitch_x, stitch_y, stitch_heading, stitch_kappa, stitch_speed, stitch_accel, stitch_time = self.start_point_and_stitch_trajectory(pre_trajectory_x, pre_trajectory_y, pre_trajectory_heading, pre_trajectory_kappa, pre_trajectory_velocity, pre_trajectory_accel, pre_trajectory_time, current_time, 
+                                                host_x, host_y, host_heading_xy, host_kappa, host_vx, host_vy, host_heading, host_ax, host_ay)
+
+            index2s = self.index2s(path_x, path_y, origin_x, origin_y, origin_match_point_index)``
+
+            proj_x, proj_y, proj_heading, proj_kappa = self.CalcProjPoint(s, frenet_path_x, frenet_path_y, frenet_path_heading, frenet_path_kappa, index2s)
+            s_set, l_set = self.world2frenet_path(x_set, y_set, frenet_path_x, frenet_path_y, proj_x_set, proj_y_set, proj_heading_set, proj_match_point_index_set, index2s)
+            s_dot_set, l_dot_set, dl_set = self.cal_dot(l_set, vx_set, vy_set, proj_heading_set, proj_kappa_set)
+            s_dot2_set, l_dot2_set, ddl_set = self.cal_dot2(ax_set, ay_set, proj_heading_set, proj_kappa_set, l_set, s_dot_set, dl_set)
+
+
 
 
     # ###############
@@ -633,3 +833,17 @@ class Dynamic_Planning:
     #         ar = trajectory_accel[start_index]
 
     #     return xr, yr, thetar, kappar, vr, ar
+
+  
+
+
+
+
+
+
+
+
+
+
+
+

@@ -9,7 +9,7 @@ node_rate: 10
 viz: true
 viz_trajectory_topic_name: /viz/trajectory/dp_line
 
-#for dp
+#path_planning dp
 w_cost_collision: 999999
 w_cost_smooth_dl: 300
 w_cost_smooth_ddl: 2000
@@ -20,7 +20,7 @@ col: 6
 sample_s: 10
 smaple_l: 1
 
-#for qp
+#path_planning qp
 w_cost_l: 5
 w_cost_dl: 50000
 w_cost_ddl: 300
@@ -29,3 +29,5 @@ w_cost_centre: 1200
 w_cost_end_l: 40
 w_cost_end_dl: 40
 w_cost_end_ddl: 40
+
+recommend_velocity: 15

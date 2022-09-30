@@ -1,0 +1,14 @@
+#include "velocity_planning.h"
+#include <map>
+#include <cmath>
+#include <eigen3/Eigen/Dense>
+#include <msgs/ReferencePoint.h>
+#include <msgs/TrajectoryPoint.h>
+#include <msgs/Object.h>
+#include <msgs/ObjectList.h>
+#include <tools/tools.hpp>
+#include <tools/frenet.hpp>
+#include <string>
+#include <ros/ros.h>
+#include <vector>
+#include "OsqpEigen/OsqpEigen.h"

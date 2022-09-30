@@ -1,47 +1,25 @@
 #pragma once
 #include <cmath>
 #include <eigen3/Eigen/Dense>
+#include "OsqpEigen/OsqpEigen.h"
+#include <msgs/Object.h>
+#include <msgs/ReferencePoint.h>
 
 double cal_distance(double x1, double y1, double x2=0, double y2=0){
     return std::pow(std::pow((x1-x2),2)+std::pow(y1-y2, 2), 0.5);
 }
 
-//     //计算index与s的转换，index2s（i）表示编号i对应的弧长s
-// template <class T>
-// void index2s(msgs::ReferenceLine& rline, msgs::ReferencePoint& origin_point, int& origin_match_point_index){
-//     for (int i=1; i<=rline.points.size(); i++){
-//         rline.points[i].s = std::sqrt(std::pow(rline.points[i].x - rline.points[i-1].x, 2) + std::pow(rline[i].points.y - rline[i-1].points.y, 2)) + rline.points[i].s[i-1];
-//     }
-    
-//     s0 = CalcSfromIndex2s(index2s, rline, origin_point, origin_match_point_index);
-//     for (int i=0; i<=180; i++){
-//         trajectory.points[i] = index2s[i] - s0;
-//     }
-// }
-
-//     //计算点proj_x， proj_y对应的弧长，并判断投影点在匹配点的前面还是后面
-// template <class T>
-// void CalcSfromIndex2s(int& index2s[181], msgs::ReferenceLine& rline, msgs::ReferencePoint& project_point, int& proj_match_point_index){
-//     Eigen::Vector2d vector1(project_point.x - rline.points[proj_match_point_index].x, project_point.y - rline.points[proj_match_point_index].y);
-//     if (proj_match_point_index < rline.points.size()){
-//         Eigen::Vector2d vector2(rline.points[proj_match_point_index + 1].x - rline.points[proj_match_point_index].x, rline.points[proj_match_point_index + 1].y - rline.points[proj_match_point_index].y);
-//     }
-//     else{
-//         Eigen::Vector2d vector2(rline.points[proj_match_point_index].x - rline.points[proj_match_point_index - 1].x, rline.points[proj_match_point_index].y - rline.points[proj_match_point_index - 1].y);
-//     }
-    
-//     if (vector1.transpose().dot(vector2) > 0){      //投影点在匹配点前面
-//         s = index2s[proj_match_point_index] + std::sqrt(vector1.transpose().dot(vector1));
-//     }
-//     else{
-//         s = index2s[proj_match_point_index] - std::sqrt(vector1.transpose().dot(vector1));
-//     }
-// }
+template <class T>
+auto cal_pow(T& cal, int n){
+    for (auto& i : cal){
+        i = std::pow(i, n);
+    }
+}
 
 template <class T>
 void find_match_point(int start, int end, T& object, msgs::ReferenceLine& rline, msgs::ReferencePoint& match_point, int& match_point_index, int& max_increase_count){
     // 寻找匹配点, 以rline原点为坐标原点，计算障碍物在参考线上的匹配点match_point（仍为cartesian坐标系下）
-    double ex = object.location.pose.x, ey = object.location.pose.y;
+    double ex = object.pose.x, ey = object.pose.y;
     double min_distance = 1e6, pre_distance = 1e6;
     int increase_count = 0;
     
@@ -69,10 +47,10 @@ void find_match_point(int start, int end, T& object, msgs::ReferenceLine& rline,
 }
 
 template <class T>      
-void cal_project_point(T& object, msgs::ReferencePoint& match_point, msgs::ReferencePoint& project_point, int& match_point_index, int[]& index2s){
+void cal_project_point(T& object, msgs::ReferencePoint& match_point, msgs::ReferencePoint& project_point){
     //计算匹配点match_point在frenet坐标轴的投影的直角坐标（proj_x, proj_y, proj_heading, proj_kappa）
-    double ds = object.location.frenet_s - match_point.s;      
-    // double ds = (object.pose.x - match_point.x)*std::cos(match_point.theta) + (object.pose.y - match_point.y)*std::sin(match_point.theta);
+    // double ds = object.frenet_s - match_point.s;
+    double ds = (object.pose.x - match_point.x)*std::cos(match_point.theta) + (object.pose.y - match_point.y)*std::sin(match_point.theta);
     project_point.x = match_point.x + ds * std::cos(match_point.theta);
     project_point.y = match_point.y + ds * std::sin(match_point.theta);
     project_point.theta = match_point.theta + ds * match_point.kappa;
@@ -102,21 +80,85 @@ Eigen::VectorXd cal_quintic_coef(T&start_point, T&end_point){
          1,  end_s_1,  end_s_2,   end_s_3,   end_s_4,    end_s_5, 
          0,  1,        2*end_s_1, 3*end_s_2, 4*end_s_3,  5*end_s_4, 
          0,  0,        2,         6*end_s_1, 12*end_s_2, 20*end_s_3;
-    B << start_point.frenet_d[0], start_point.frenet_d[1], start_point.frenet_d[2], end_point.frenet_d[0], end_point.frenet_d[1], end_point.frenet_d[2];
+    B << start_point.frenet_l[0], start_point.frenet_l[1], start_point.frenet_l[2], end_point.frenet_l[0], end_point.frenet_l[1], end_point.frenet_l[2];
     return A.inverse() * B;
 }
 
 template <class T>
-void CalcObsCost(T& square_d, int w_cost_collision){
-    double cost = 0;
-    for (int i=0; i<square_d.rows(); i++){
-        if (square_d(i, 0) < 16 && square_d(i, 0) > 9){
-            cost = cost + 1000 / square_d;
-        }
-        else if (squre_d(i, 0) < 9)
-        {
-            cost = cost + w_cost_collision;
-        }
+Eigen::VectorXd solve_qp(Eigen::MatrixXd H, Eigen::VectorXd f, Eigen::MatrixXd A, Eigen::MatrixXd b, Eigen::MatrixXd Aeq, Eigen::MatrixXd beq, Eigen::MatrixXd lb, Eigen::MatrixXd& ub, int n){
+    OsqpEigen::Solver solver;
+    solver.settings()->setWarmStart(true);
+    
+    Eigen::SparseMatrix<double> hessian;
+    Eigen::VectorXd gradient;
+    Eigen::SparseMatrix<double> linearMatrix;
+    Eigen::VectorXd lowerBound;
+    Eigen::VectorXd upperBound;
+    Eigen::MatrixXd Iden = Eigen::Identity(3n, 3n);
+    Eigen::MatrixXd Infinite = Eigen::Ones(8n, 1);
+    Infinite *= -99999;
+
+    int num_Variables = 3n;
+    int num_Constrains = 13n-2;
+    solver.data()->setNumberOfVariables(num_Variables);
+    solver.data()->setNumberOfConstraints(num_Constrains);
+
+    hessian.resize(num_Variables, num_Variables);
+    gradient.resize(num_Variables);
+    linearMatrix.resize(num_Constrains, num_Variables);
+    lowerBound.resize(num_Constrains);
+    upperBound.resize(num_Constrains);
+
+    hessian << H;
+    gradient << f;
+    linearMatrix << Iden, Aeq, A;
+    lowerBound << lb, beq, Infinite;
+    upperBound << ub, beq, b;
+
+    if (!solver.data()->setHessianMatrix(hessian)) return false;
+    if (!solver.data()->setGradient(gradient)) return false;
+    if (!solver.data()->setLinearConstraintsMatrix(linearMatrix)) return false;
+    if (!solver.data()->setLowerBound(lowerBound)) return false;
+    if (!solver.data()->setUpperBound(upperBound)) return false;
+    if (!solver.initSolver()){
+        cout << "init solver failed" << endl;
     }
-    return cost
+    if (!solver.solve()){
+        cout << "qp solve failed" << endl;
+    }
+
+    Eigen::VectorXd QPSolution;
+    QPSolution = solver.getSolution();
+    return QPSolution;
+}
+
+void path_frenet2cartesian(msg::Trajectory& trajectory, msgs::ReferenceLine& rline, std::vector<double>& index2s){
+    msgs::ReferencePoint proj_point;
+    for (auto trajectory_point : trajectory.points){
+        CalcProjPoint_of_s(trajectory_point, rline, index2s, proj_point);
+        trajectory_point.pose.x = proj_point.x + trajectory_point.frenet_l[0] * -std::sin(proj_point.theta);
+        trajectory_point.pose.y = proj_point.y + trajectory_point.frenet_l[0] * std::cos(proj_point.theta);
+        trajectory_point.pose.theta = proj_point.theta + std::atan(trajectory_point.frenet_l[1] / (1 - proj_point.kappa * trajectory_point.frenet_l[0]));
+        trajectory_point.kappa = ((trajectory_point.frenet_l[2] + proj_point.theta * trajectory_point.frenet_l[1] * std::tan(trajectory_point.pose.theta - proj_point.theta)) * std::pow(std::cos(trajectory_point.pose.theta - \
+            proj_point.theta), 2) / (1 - proj_point.kappa * trajectory_point.frenet_l[0]) + proj_point.kappa) * std::cos(trajectory_point.pose.theta - proj_point.theta) / (1 - proj_point.kappa * trajectory_point.frenet_l[0]);
+    }
+}
+
+void CalcProjPoint_of_s(msg::TrajectoryPoint& trajectory_point, msgs::ReferenceLine& rline, std::vector<double>& index2s, msgs::ReferencePoint& proj_point){
+    int match_index = 0;
+    double s = trajectory_point.frenet_s[0];
+    while (index2s[match_index] < s){
+        match_index += 1;
+    }
+    msgs::ReferencePoint match_point;
+    match_point.x = rline.points[match_index].x;
+    match_point.y = rline.points[match_index].y;
+    match_point.theta = rline.points[match_index].theta;
+    match_point.kappa = rline.points[match_index].kappa;
+
+    double ds = s - index2s[match_index];
+    proj_point.x = std::cos(match_point.theta) * ds + match_point.x;
+    proj_point.y = std::sin(match_point.theta) * ds + match_point.y;
+    proj_point.theta = match_point.theta + ds * match_point.kappa;
+    proj_point.kappa = match_point.kappa;
 }

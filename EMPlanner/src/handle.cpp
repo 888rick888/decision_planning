@@ -46,18 +46,16 @@ Handle::Handle(ros::NodeHandle &nodeHandle){
     if(is_viz){
         viz_trajectory_pub = nodeHandle.advertise<nav_msgs::Path>(viz_trajectory_topic_name, 1);
     }
-    dp.set_plan_dt(0.1);
+    PathP.set_plan_dt(0.1);
 
 }
 
 int Handle::get_NodeRate(){return node_rate;}
 
-void Handle::rline_callback(const msgs::ReferenceLine& rline_data){dp.set_rline(rline_data);}
+void Handle::rline_callback(const msgs::ReferenceLine& rline_data){PathP.set_rline(rline_data);}
 
 void Handle::callback(const msgs::ObjectConstPtr& ego_data, const msgs::ObjectListConstPtr& obstacles_data){
-    dp.set_ego_state(*ego_data);
-    dp.set_obstacles(*obstacles_data);
+    PathP.path_planning(*ego_data, *obstacles_data)；
 }
-
 }
 

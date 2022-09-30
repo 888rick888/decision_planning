@@ -7,16 +7,7 @@
 
 class PathP{
     public:
-        DP();
-        void calc_startpoint_stitch_trajectory();
-        void world2frenet_path();
-        void calc_dot_infrenet();
-        void calc_dot2_infrenet();
-        void dp();
-        void CalcCost();
-        void add_density();
-        void path_frenet2cartesian();
-
+        PathP();
         void get_param();
         void set_dt(double planning_delta_time);
         void get_referline(const msgs::ReferenceLine rline_data);
@@ -24,18 +15,22 @@ class PathP{
         void set_ego_state(const msgs::Object ego_data);
         void set_obstacles(const msgs::ObjectList obstacles_data);
 
-        void get_boundary()
-        void find_near_index()
-        void qp()
+        void calc_startpoint_stitch_trajectory();
+        void index2s();
+        void dp();
+
+        void get_boundary();
+        void qp();
+        
 
     private:
         msgs::Object ego_state;
         msgs::ObjectList obstacles;
+        msgs::ReferenceLine rline;
         msgs::TrajectoryPoint start_point;
         msgs::Trajectory trajectory;
         msgs::Trajectory pre_trajectory;
-        msgs::ReferenceLine rline;
-
+        msgs::Trajectory trajectory_dp;
         msgs::Trajectory trajectory_qp;
 
         msgs::ObjectList static_obstacles;
@@ -46,4 +41,5 @@ class PathP{
         bool first_run;
         double plan_dt;
 
-}
+        std::vector<double> index2s;
+};
