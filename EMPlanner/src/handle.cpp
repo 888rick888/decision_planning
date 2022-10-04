@@ -55,7 +55,9 @@ int Handle::get_NodeRate(){return node_rate;}
 void Handle::rline_callback(const msgs::ReferenceLine& rline_data){PathP.set_rline(rline_data);}
 
 void Handle::callback(const msgs::ObjectConstPtr& ego_data, const msgs::ObjectListConstPtr& obstacles_data){
-    PathP.path_planning(*ego_data, *obstacles_data)；
-}
+    PathP.path_planning(*ego_data, *obstacles_data);
+    VelocityP.save_msgs(PathP.get_msgs());
+    VelocityP.velocity_planning();
+    }
 }
 

@@ -94,12 +94,12 @@ Eigen::VectorXd solve_qp(Eigen::MatrixXd H, Eigen::VectorXd f, Eigen::MatrixXd A
     Eigen::SparseMatrix<double> linearMatrix;
     Eigen::VectorXd lowerBound;
     Eigen::VectorXd upperBound;
-    Eigen::MatrixXd Iden = Eigen::Identity(3n, 3n);
-    Eigen::MatrixXd Infinite = Eigen::Ones(8n, 1);
+    Eigen::MatrixXd Iden = Eigen::Identity(ub.rows(), ub.rows());
+    Eigen::MatrixXd Infinite = Eigen::Ones(b.rows(), 1);
     Infinite *= -99999;
 
-    int num_Variables = 3n;
-    int num_Constrains = 13n-2;
+    int num_Variables = std::max(A.cols(), Aeq.cols());
+    int num_Constrains = ub.rows() + Aeq.rows() + A.rows();
     solver.data()->setNumberOfVariables(num_Variables);
     solver.data()->setNumberOfConstraints(num_Constrains);
 
@@ -161,4 +161,33 @@ void CalcProjPoint_of_s(msg::TrajectoryPoint& trajectory_point, msgs::ReferenceL
     proj_point.y = std::sin(match_point.theta) * ds + match_point.y;
     proj_point.theta = match_point.theta + ds * match_point.kappa;
     proj_point.kappa = match_point.kappa;
+}
+
+
+void path_merge_velocity(msgs::TrajectoryPoint& start_point, msgs::Trajectory& path, msgs::Trajectory& velocity, msgs::Trajectory& trajectory_final){
+    int index = path.points.size() - 1;
+    int n = 401;
+    auto current_time = start_points.t
+
+    for (int i=0; i<n-1; i++){
+        trajectory_final.points[i].pose.x = interpolate(path.points[i:index].frenet_s[0], path.points[i:index].pose.x, velocity.points[i].frenet_s[0]);
+        trajectory_final.points[i].pose.y = interpolate(path.points[i:index].frenet_s[0], path.points[i:index].pose.y, velocity.points[i].frenet_s[0]);
+        trajectory_final.points[i].pose.theta = interpolate(path.points[i:index].frenet_s[0], path.points[i:index].pose.theta, velocity.points[i].frenet_s[0]);
+        trajectory_final.points[i].kappa = interpolate(path.points[i:index].frenet_s[0], path.points[i:index].kappa, velocity.points[i].frenet_s[0]);
+        trajectory_final.points[i].t = velocity.points[i].t + current_time;
+        trajectory_final.points[i].velocity.x = velocity.points[i].frenet_s[1];
+        trajectory_final.points[i].accel.x = velocity.points[i].frenet_s[2];
+    }
+    trajectory_final.points[-1].pose.x = path.points[-1].pose.x;
+    trajectory_final.points[-1].pose.y = path.points[-1].pose.y;
+    trajectory_final.points[-1].pose.theta = path.points[-1].pose.thetas;
+    trajectory_final.points[-1].kappa = path.points[-1].kappa;
+    trajectory_final.points[-1].t = velocity.points[-1].t + current_time;
+    trajectory_final.points[-1].velocity.x = velocity.points[-1].frenet_s[1];
+    trajectory_final.points[-1].accel.x = velocity.points[-1].frenet_s[2];
+}
+
+void stitch_trajectory(msgs::Trajectory& init, msgs::Trajectory& stitch, msgs::Trajectory& final){     //此处的stitch是路径规划计算起点的stitch
+    final.insert(final.begin(), init.begin(), init.end());
+    final.insert(final.end(), stitch.begin(), stitch.end());
 }

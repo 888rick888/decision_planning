@@ -92,15 +92,15 @@ class qp:
                 [-1, d2, 0],
                 [-1, d2, 0]]
         for i in range(n - 1):
-            row = 2*i - 1 +2
-            col = 3*i - 2 +3
+            row = 2*i
+            col = 3*i
             Aeq = np.matrix(Aeq)
             Aeq[row:row+2, col:col+6] = Aeq_sub
 
         for i in range(n):
         # for i in range(1， n):    #二次规划奔溃的解决方法之二
-            row = 8*i - 7 +8
-            col = 3*i - 2 +3
+            row = 8*i
+            col = 3*i
             A = np.matrix(A)
             A[row:row + 8, col:col + 3] = A_sub
 
@@ -111,7 +111,7 @@ class qp:
         # for i in range(1， n):    #二次规划奔溃的解决方法之二
             index1 = min(i + front_index, n)    #左前右前
             index2 = max(i - back_index, 1)     #左后右后
-            b[8*i - 7:8*i+1 , 0] = [[l_max[index1] - w/2],[l_max[index1] + w/2], [l_max[index2] - w/2], [l_max[index2] + w/2], [-l_min[index1] + w/2], [-l_min[index1] - w/2], [-l_min[index2] + w/2], [-l_min[index2] - w/2]]
+            b[8*i:8*i+8 , 0] = [[l_max[index1] - w/2],[l_max[index1] + w/2], [l_max[index2] - w/2], [l_max[index2] + w/2], [-l_min[index1] + w/2], [-l_min[index1] - w/2], [-l_min[index2] + w/2], [-l_min[index2] - w/2]]
 
         lb = np.ones((3*n, 1)) * -99999
         ub = np.ones((3*n, 1)) * 99999
@@ -119,13 +119,13 @@ class qp:
         ub[0], ub[1], ub[2] = lb[0], lb[1], lb[2]
 
         for i in range(n):
-            H_L[3*i - 2, 3*i - 2], H_DL[3*i - 1, 3*i - 1], H_DDL[3*i, 3*i] = 1, 1, 1
+            H_L[3*i, 3*i], H_DL[3*i + 1, 3*i + 1], H_DDL[3*i + 2, 3*i + 2] = 1, 1, 1
         
         H_CENTRE = H_L
         H_dddl_sub = [0, 0, 1, 0, 0, -1]
         for i in range(n-1):
             row = i
-            col = 3*i - 2
+            col = 3*i
             H_DDDL[row, col:col+6] = H_dddl_sub
 
         H_L_END[3*n - 2, 3*n - 2], H_DL_END[3*n - 1, 3*n -1], H_DDL_END[3*n, 3*n] = 1, 1, 1
@@ -148,9 +148,9 @@ class qp:
         X = qpsolvers.solve_qp(H, f, A, b , Aeq, beq, lb, ub)
         #缺乏曲率的约束，可以用|dl[i+1] - dl[i]|/ds <= kappa_max 近似约束曲率
         for i in range(n):
-            qp_path_l[i] = X[3*i - 2]
-            qp_path_dl[i] = X[3*i - 1]
-            qp_path_ddl[i] = X[3*i]
+            qp_path_l[i] = X[3*i]
+            qp_path_dl[i] = X[3*i + 1]
+            qp_path_ddl[i] = X[3*i + 2]
 
         return qp_path_l, qp_path_dl, qp_path_ddl
 

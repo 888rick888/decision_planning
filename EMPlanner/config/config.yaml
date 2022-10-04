@@ -30,4 +30,15 @@ w_cost_end_l: 40
 w_cost_end_dl: 40
 w_cost_end_ddl: 40
 
+#velocity_planning
 recommend_velocity: 15
+
+#velocity_planning dp
+w_cost_ref_speed: 400
+w_cost_accel: 100
+w_cost_obs: 99999
+
+#velocity_planning qp
+w_cost_s_dot2: 10
+w_cost_v_ref: 50
+w_cost_jerk: 500

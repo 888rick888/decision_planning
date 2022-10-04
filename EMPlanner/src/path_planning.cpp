@@ -2,6 +2,10 @@
 #include <map>
 #include <cmath>
 #include <eigen3/Eigen/Dense>
+#include <string>
+#include <ros/ros.h>
+#include <vector>
+#include "OsqpEigen/OsqpEigen.h"
 #include <msgs/ReferencePoint.h>
 #include <msgs/ReferenceLine.h>
 #include <msgs/TrajectoryPoint.h>
@@ -10,10 +14,6 @@
 #include <tools/tools.hpp>
 #include <tools/frenet.hpp>
 #include <tools/pathp_tools.hpp>
-#include <string>
-#include <ros/ros.h>
-#include <vector>
-#include "OsqpEigen/OsqpEigen.h"
 
 int w_cost_collision, w_cost_smooth_dl, w_cost_smooth_ddl, w_cost_smooth_dddl;
 int w_cost_ref, row, col;
@@ -38,7 +38,6 @@ void PathP::get_trajactory(const msgs::Trajectory trajectory_data){
 }
 
 void PathP::get_param(){
-    
     // if (!ros::param::get("w_cost_collision", w_cost_collision))
     //     ROS_WARN_STREAM("Cannot load w_cost_collision. Standard value is: " << w_cost_collision);
     ros::param::get("/row", row);
@@ -71,7 +70,6 @@ void PathP::path_planning(const msgs::Object ego_data, const msgs::ObjectList ob
     trajectory = trajectory_qp;
     path_frenet2cartesian(trajectory, rline, index2s);
     pre_trajectory = trajectory;
-
 }
 
 void PathP::set_ego_state(const msgs::Object ego_data){
@@ -285,6 +283,50 @@ void PathP::dp(){   //输出的s， l不包含规划起点
     add_density_dp(trajectory_temp, start_point, trajectory_dp)
 }
 
+double CalcCost(auto& pre_point, auto& cur_point, int cur_node, auto obs_set){
+    Eigen::Vector2d ds = Eigen::Zero(row+1, 1), l = Eigen::Zero(row+1, 1), dl = Eigen::Zero(row+1, 1);
+    Eigen::Vector2d ddl = Eigen::Zero(row+1, 1), dddl = Eigen::Zero(row+1, 1), cal = Eigen::Ones(row+1, 1);
+    
+    if (cur_node == 999){
+        pre_point.frenet_l[1] = 0;
+        pre_point.frenet_l[2] = 0;
+        cur_point.frenet_l[1] = 0;
+        cur_point.frenet_l[2] = 0;
+        for (int i=0; i<row+1; i++){
+            ds(i, 0) = pre_point.frenet_s[0] + (i - 1) * (cur_point.frenet_s[0] - pre_point.frenet_s[0]) / 10;
+        }
+    }
+    else{
+        cur_point.frenet_l[0] = ((row + 1) / 2 - cur_node) * sample_l;
+        cur_point.frenet_l[1] = 0;
+        cur_point.frenet_l[2] = 0;
+        cur_point.frenet_s[0] = pre_point.frenet_s[0] + sample_s;
+        for (int i=0; i<row+1; i++){
+            ds(i, 0) = pre_point.frenet_s[0] + (i - 1) * sample_s / 10;
+        }
+    }
+    auto coeff = cal_quintic_coef(pre_point, cur_point);
+    auto a0 = coeff[0], a1 = coeff[1], a2 = coeff[2], a3 = coeff[3], a4 = coeff[4], a5 = coeff[5];
+    auto l = a0 * cal + a1 * ds + a2 * cal_pow(ds, 2) + a3 * cal_pow(ds, 3) + a4 * cal_pow(ds, 4) + a5 * cal_pow(ds, 5);
+    auto dl = a1 * cal + 2 * a2 * ds + 3 * a3 * cal_pow(ds, 2) + 4 * a4 * cal_pow(ds, 3) + 5 * a5 * cal_pow(ds, 4);
+    auto ddl = 2 * a2 * cal + 6 * a3 * ds + 12 * a4 * cal_pow(ds, 2) + 20 * a5 * cal_pow(ds, 3);
+    auto dddl = 6 * a3 * cal + 25 * a4 * ds + 60 * a5 * cal_pow(ds, 2);
+ 
+    double cost_smooth = w_cost_smooth_dl * dl.transpose().dot(dl) + w_cost_smooth_ddl * ddl.transpose().dot(ddl) + w_cost_smooth_dddl * dddl.transpose().dot(dddl);
+    double cost_ref = w_cost_ref * l.transpose().dot(l);
+    double cost_collision = 0;
+    
+    for (int i=0; i<obs_set.rows(); i++){
+        auto dlon = cal * obs_set(i, 0) - ds;
+        auto dlat = cal * obs_set(i, 1) - l;
+        auto square_d = cal_pow(dlon, 2) + cal_pow(dlat, 2);
+        double cost_collision_once = CalcObsCost(square_d, w_cost_collision);
+        cost_collision = cost_collision + cost_collision_once;
+    }
+    cost = cost_collision + cost_smooth + cost_ref;
+    return cost;
+}
+
 
 ////
 //qp
@@ -321,7 +363,6 @@ void PathP::get_boundary(){
             }
         }
     }
-}
 
 
 void PathP::qp(){
@@ -358,14 +399,14 @@ void PathP::qp(){
                 -1, d2,     0;
     int row_temp, col_temp;
     for (int i=0, i<n-1; i++){
-        row_temp = 2*i - 1 + 2;
-        col_temp = 3*i - 2 + 3;
+        row_temp = 2*i;
+        col_temp = 3*i;
         Aeq(row_temp: row_temp + 2 , col_temp: col_temp+6) = Aeq_sub;
     }
     for (int i=0, i<n; i++){
     // for (int i=1, i<n; i++){     //二次规划解决办法之二
-        row_temp = 8*i - 7 + 8;
-        col_temp = 3*i - 2 + 3;
+        row_temp = 8*i;
+        col_temp = 3*i;
         A(row_temp: row_temp + 8 , col_temp: col_temp+3) = A_sub;
     } 
     int front_index = std::ceil(d1/ds);
@@ -375,7 +416,7 @@ void PathP::qp(){
     // for (int i=1, i<n; i++){     //二次规划解决办法之二
         int index1 = std::min(i + front_index, n);
         int index2 = std::max(i - back_index, 1);
-        b(8*i - 7:  8*i + 1, 0) << l_max[index1] - w/2, l_max[index1] + w/2, l_max[index2] - w/2, l_max[index2] + w/2, -l_min[index1] + w/2, -l_min[index1] - w/2, -l_min[index2] + w/2, -l_min[index2] - w/2;
+        b(8*i:  8*i + 8, 0) << l_max[index1] - w/2, l_max[index1] + w/2, l_max[index2] - w/2, l_max[index2] + w/2, -l_min[index1] + w/2, -l_min[index1] - w/2, -l_min[index2] + w/2, -l_min[index2] - w/2;
     }
     Eigen::MatrixXd lb = Eigen::Ones(3*n, 1);
     Eigen::MatrixXd ub = Eigen::Ones(3*n, 1);
@@ -387,16 +428,16 @@ void PathP::qp(){
     ub = lb;
 
     for (int i=0; i<n; i++){
-        H_L(3*i - 2, 3*i - 2) = 1;
-        H_DL(3*i - 1, 3*i - 1) = 1;
-        H_DDL(3*i, 3*i) = 1;
+        H_L(3*i, 3*i) = 1;
+        H_DL(3*i + 1, 3*i + 1) = 1;
+        H_DDL(3*i + 2, 3*i + 2) = 1;
     }
 
     Eigen::MatrixXd H_CENTRE = H_L;
     Eigen::VectorXd H_dddl_sub(6) << 0, 0, 1, 0, 0, -1;
     for (int i=0; i<n-1; i++){
         row_temp = i;
-        col_temp = 3*i - 2;
+        col_temp = 3*i;
         H_DDDL(row_temp, col_temp: col_temp + 6) = H_dddl_sub;
     }
 
@@ -415,7 +456,7 @@ void PathP::qp(){
     // auto centre_line = trajectory_dp.frenet_l[0];       //二次规划奔溃解决方法之一
     
     for (int i=0; i<n; i++){
-        f[3*i - 2] = -2 * centre_line[i]; 
+        f[3*i] = -2 * centre_line[i]; 
     }
     f = w_cost_centre * f;
 
@@ -432,4 +473,8 @@ void PathP::qp(){
         trajectory_temp.points[i].frenet_l[2] = X[3*i + 2];
     }
     add_density_qp(trajectory_temp, trajectory_qp);
+}
+
+void get_msgs(){
+    return start_point, ego_state, dynamic_obstacles, trajectory
 }

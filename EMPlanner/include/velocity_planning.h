@@ -4,41 +4,31 @@
 #include <msgs/ObjectList.h>
 #include <msgs/Object.h>
 #include <map>
+#include <path_planning.h>
 
 class VelocityP{
     public:
         VelocityP();
+        void get_param();
+        void set_dt(double planning_delta_time);
+
         void trajectory_s2xy();
         void programming_init();
         void generate_st_graph();
         void speed_dp();
-        void CalcDPCost();
-        void CalcObsCost();
-        void CalcCollisionCost();
-        void CalcSTCoordinate();
+        double CalcDPCost(int row_start, int col_start, int row_end, int col_end, auto s_list, auto t_list, auto dp_st_s_dot);
         void Convex_space();
         void qp_velocity();
+        void velocity_planning();
+        void save_msgs(msgs::TrajectoryPoint start, msgs::Object ego, msgs::ObjectList dynamic, msgs::Trajectory trajectory);
 
-        void get_param();
-        void set_dt(double planning_delta_time);
-        void get_referline(const msgs::ReferenceLine rline_data);
-        void get_trajactory(const msgs::Trajectory trajectory_data);
-        void set_ego_state(const msgs::Object ego_data);
-        void set_obstacles(const msgs::ObjectList obstacles_data);
-
-        Eigen::VectorXd solve_qp();
-        
     private:
         msgs::Object ego_state;
-        msgs::ObjectList obstacles;
         msgs::TrajectoryPoint start_point;
-        msgs::Trajectory trajectory;
-        msgs::Trajectory pre_trajectory;
-        msgs::ReferenceLine rline;
-
         msgs::Trajectory trajectory_qp;
+        msgs::Trajectory trajectory_init;
 
-        msgs::ObjectList static_obstacles;
+        msgs::Velocity_planning_st obs_st;
         msgs::ObjectList dynamic_obstacles;
 
         std::map<int, int> obs_id2index;
@@ -46,4 +36,5 @@ class VelocityP{
         bool first_run;
         double plan_dt;
 
+        std::vector<double> path_index2s;
 };

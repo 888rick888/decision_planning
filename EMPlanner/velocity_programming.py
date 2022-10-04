@@ -90,9 +90,9 @@ class vp:
         dp_st_s_dot = np.zeros((40, 16))        #表示从起点到i，j点的最优路径的末速度
 
         for i in range(len(s_list)):    #计算从dp起点到第一列的cost
-            dp_st_cost[i][1] = self.CalcDPCost(0, 0, i, 1, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, w_cost_ref_speed, reference_speed, w_cost_accel, w_cost_obs, plan_start_s_dot, s_list, t_list, dp_st_s_dot)
+            dp_st_cost[i][0] = self.CalcDPCost(0, 0, i, 1, obs_st_s_in_set, obs_st_s_out_set, obs_st_t_in_set, obs_st_t_out_set, w_cost_ref_speed, reference_speed, w_cost_accel, w_cost_obs, plan_start_s_dot, s_list, t_list, dp_st_s_dot)
             s_end, t_end = self.CalcSTCoordinate(i, 1, s_list, t_list)
-            dp_st_s_dot[i][1] = s_end / t_end
+            dp_st_s_dot[i][0] = s_end / t_end
         
         for i in range(1, len(t_list)):
             for j in range(len(s_list)):
@@ -183,9 +183,9 @@ class vp:
                 min_dis = 0
                 dis1 = sqrt(np.dot(vector1.T, vector1))
                 dis2 = sqrt(np.dot(vector2.T, vector2))
-                dis3 = abs(np.dot(vector1[0], vector3[1]) - np.dot(vector1[1], vector3[0])) / sqrt(np.dot(vector3.T, vector3))
+                dis3 = abs(vector1[0] * vector3[1] - vector1[1] * vector3[0]) / sqrt(np.dot(vector3.T, vector3))
                 if (np.dot(vector1.T, vector3) > 0 and np.dot(vector2.T, vector3) > 0) or (np.dot(vector1.T, vector3) < 0 and np.dot(vector2.T,vector3) < 0):
-                    min_dis = min(dis1)
+                    min_dis = min(dis1, dis2)
                 else:
                     min_dis = dis3
                 obs_cost = obs_cost +  self.CalcCollisionCost(w_cost_obs, min_dis)
@@ -236,7 +236,7 @@ class vp:
             if isnan(dp_speed_s[i]):
                 break
             cur_s = dp_speed_s[i]
-            cur_kappa = interpolate(path_index2s[1:path_index2s_end_index], trajectory_kappa_init[1:path_index2s_end_index], cur_s) #插值找cur_s所对应的曲率
+            cur_kappa = interpolate(path_index2s[0:path_index2s_end_index], trajectory_kappa_init[0:path_index2s_end_index], cur_s) #插值找cur_s所对应的曲率
             max_speed = sqrt(max_lateral_accel / abs(cur_kappa) + 1e-10)    #由a = v**2 * k
             min_speed = 0
             s_dot_lb[i] = min_speed
@@ -255,23 +255,23 @@ class vp:
                 elif dp_speed_t[j] <= obs_st_t_in_set[i] and dp_speed_t[j+1]:   #否则遍历dp_speed_t 找到与obs_st_t_in_set[i]最近的点的编号
                     break
 
-            t_lbindex = j   #将点的编号赋值给j
+            t_lb_index = j   #将点的编号赋值给j
             for j in range(len(dp_speed_t) - 1):    #找到dp_speed_t中与obs_st_t_out_set[i]最近的时间，并将此时间的编号赋值给t_ub_index
-                if dp_speed_t[1] > obs_st_t_out_set[i]:
+                if dp_speed_t[0] > obs_st_t_out_set[i]:
                     break
                 elif dp_speed_t[j] <= obs_st_t_out_set[i] and dp_speed_t[j + 1] > obs_st_t_out_set[i]:
                     break
             
-            t_ub_index = j  #这里稍微做个缓冲， 把t_lb_index稍微缩小一些，t_ub_index稍微放打一些
+            t_ub_index = j  #这里稍微做个缓冲， 把t_lb_index稍微缩小一些，t_ub_index稍微放大一些
             t_lb_index = max(t_lb_index -2 , 3) #最低为3， 因为碰瓷没法处理
             t_ub_index = min(t_ub_index + 2, dp_speed_end_index)
             if obs_s > dp_s:    #决策为减速避让
-                for m in range(t_lb_index, t_ub_index):     #在t_lb_index, t_ub_index的区间上，s的上界不可以超过障碍物st直线
+                for m in range(t_lb_index, t_ub_index+1):     #在t_lb_index, t_ub_index的区间上，s的上界不可以超过障碍物st直线
                     dp_t = dp_speed_t[m]
                     s_ub[m] = min(s_ub[m], obs_st_s_in_set[i] + obs_speed * (dp_t - obs_st_t_in_set[i]))
 
             else:   #决策为加速超车
-                for m in range(t_lb_index, t_ub_index):
+                for m in range(t_lb_index, t_ub_index+1):
                     dp_t = dp_speed_t[m]
                     s_lb[m] = max(s_lb[m], obs_st_s_in_set[i] + obs_speed * (dp_t - obs_st_t_in_set[i])) 
         
@@ -304,19 +304,19 @@ class vp:
                 [(1/6)*dt**2, dt/2]]
         
         for i in range(qp_size - 1):
-           Aeq[3*i-2:3*i+3, 2*i-1:2*i] = A_sub
+           Aeq[3*i:3*i+5, 2*i:2*i+2] = A_sub
         
         A, b = np.zeros((qp_size-1, 3*qp_size)), np.zeros((qp_size - 1, 1))     #不允许倒车约束，即s(i) - s(i+1) <= 0
         for i in range(qp_size - 1):
-            A[i, 3*i - 2], A[i, 3*i + 1] = 1, -1
+            A[i, 3*i], A[i, 3*i-1] = 1, -1
         
         for i in range((1, qp_size)):   #由于生成的凸空间约束s_lb s_ub 不带起点(动态规划不带起点而二次规划带起点），所以lb(i) = s_lb(i-1)， 以此类推, 基于车辆动力学，最小加速度为-6，最大加速度为4
-            lb[3*i - 2] = s_lb[i-1]
-            lb[3*i - 1] = s_dot_lb[i-1]
-            lb[3*i] = -6
-            ub[3*i - 2] = s_ub[i-1]
-            ub[3*i - 1] = s_dot_ub[i-1]
-            ub[3*i] = 4
+            lb[3*i] = s_lb[i]
+            lb[3*i + 1] = s_dot_lb[i]
+            lb[3*i + 2] = -6
+            ub[3*i] = s_ub[i]
+            ub[3*i + 1] = s_dot_ub[i]
+            ub[3*i + 2] = 4
         
         lb[0], lb[1], lb[2] = 0, plan_start_s_dot, plan_start_s_dot2    #起点约束
         ub[0], ub[1], ub[2] = lb[0], lb[1], lb[2]
@@ -324,21 +324,21 @@ class vp:
         A_s_dot2, A_jerk, A_ref = np.zeros((3*qp_size, 3*qp_size)), np.zeros((3*qp_size, qp_size - 1)), np.zeros((3*qp_size, 3*qp_size))
         A4_sub = [0, 0, 1, 0, 0, -1]
         for i in range(qp_size):
-            A_s_dot2[3*i][3*i], A_ref[3*i-1][3*i-1] = 1, 1
+            A_s_dot2[3*i + 2][3*i + 2], A_ref[3*i + 1][3*i + 1] = 1, 1
         for i in range(qp_size-1):
-            A_jerk[3*i-2:3*i+3, i:i] = A4_sub
+            A_jerk[3*i:3*i+5, i:i] = A4_sub
         H = w_cost_s_dot2 * np.dot(A_s_dot2, A_s_dot2.T) + w_cost_jerk * np.dot(A_jerk, A_jerk.T) + w_cost_v_ref * np.dot(A_ref, A_ref.T)
         H = 2 * H
         f = np.zeros((3*qp_size, 1))
         for i in range(qp_size):
-            f[3*i-1] = -2 * w_cost_v_ref * speed_reference
+            f[3*i+1] = -2 * w_cost_v_ref * speed_reference
 
         X = qpsolvers.solve_qp(H, f, A, b , Aeq, beq, lb, ub)
 
         for i in range(qp_size):
-            qp_s_init[i] = X[3*i - 2]
-            qp_s_dot_init[i] = X[3*i - 1]
-            qp_s_dot2_init[i] = X[3*i]
+            qp_s_init[i] = X[3*i]
+            qp_s_dot_init[i] = X[3*i + 1]
+            qp_s_dot2_init[i] = X[3*i + 2]
             relative_time_init[i] = (i - 1) * dt
         
         return qp_s_init, qp_s_dot_init, qp_s_dot2_init, relative_time_init

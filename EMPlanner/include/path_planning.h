@@ -4,6 +4,7 @@
 #include <msgs/ObjectList.h>
 #include <msgs/Object.h>
 #include <map>
+#include "velocity_planning.h"
 
 class PathP{
     public:
@@ -21,7 +22,10 @@ class PathP{
 
         void get_boundary();
         void qp();
-        
+        void path_planning();
+        void get_msgs();
+
+        friend class VelocityP;
 
     private:
         msgs::Object ego_state;

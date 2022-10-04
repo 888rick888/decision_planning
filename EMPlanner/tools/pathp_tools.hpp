@@ -8,7 +8,6 @@
 #include <tools.hpp>
 #include <vector>
 
-
     //计算点proj_x， proj_y对应的弧长，并判断投影点在匹配点的前面还是后面
 template <class T>
 void CalcSfromIndex2s(std::vector<double>& index2s, msgs::ReferenceLine& rilne, msgs::ReferencePoint& project_point, int& proj_match_point_index){
@@ -78,51 +77,6 @@ void calc_dot2_infrenet(T& trajectory, msgs::ReferencePoint& proj_point){
             trajectory.frenet_l_dot[1] = (trajectroy.frenet_l[2] - trajectory.frenet_l_dot[0] * trajectory.frenet_s[2]) / std::pow(trajectory.frenet_s[1], 2);
         }
     }
-}
-
-template <class T>
-double CalcCost(T& pre_point, T& cur_point, int cur_node, auto obs_set){
-    Eigen::Vector2d ds = Eigen::Zero(row+1, 1), l = Eigen::Zero(row+1, 1), dl = Eigen::Zero(row+1, 1);
-    Eigen::Vector2d ddl = Eigen::Zero(row+1, 1), dddl = Eigen::Zero(row+1, 1), cal = Eigen::Ones(row+1, 1);
-    
-    if (cur_node == 999){
-        pre_point.frenet_l[1] = 0;
-        pre_point.frenet_l[2] = 0;
-        cur_point.frenet_l[1] = 0;
-        cur_point.frenet_l[2] = 0;
-        for (int i=0; i<row+1; i++){
-            ds(i, 0) = pre_point.frenet_s[0] + (i - 1) * (cur_point.frenet_s[0] - pre_point.frenet_s[0]) / 10;
-        }
-    }
-    else{
-        cur_point.frenet_l[0] = ((row + 1) / 2 - cur_node) * sample_l;
-        cur_point.frenet_l[1] = 0;
-        cur_point.frenet_l[2] = 0;
-        cur_point.frenet_s[0] = pre_point.frenet_s[0] + sample_s;
-        for (int i=0; i<row+1; i++){
-            ds(i, 0) = pre_point.frenet_s[0] + (i - 1) * sample_s / 10;
-        }
-    }
-    auto coeff = cal_quintic_coef(pre_point, cur_point);
-    auto a0 = coeff[0], a1 = coeff[1], a2 = coeff[2], a3 = coeff[3], a4 = coeff[4], a5 = coeff[5];
-    auto l = a0 * cal + a1 * ds + a2 * cal_pow(ds, 2) + a3 * cal_pow(ds, 3) + a4 * cal_pow(ds, 4) + a5 * cal_pow(ds, 5);
-    auto dl = a1 * cal + 2 * a2 * ds + 3 * a3 * cal_pow(ds, 2) + 4 * a4 * cal_pow(ds, 3) + 5 * a5 * cal_pow(ds, 4);
-    auto ddl = 2 * a2 * cal + 6 * a3 * ds + 12 * a4 * cal_pow(ds, 2) + 20 * a5 * cal_pow(ds, 3);
-    auto dddl = 6 * a3 * cal + 25 * a4 * ds + 60 * a5 * cal_pow(ds, 2);
- 
-    double cost_smooth = w_cost_smooth_dl * dl.transpose().dot(dl) + w_cost_smooth_ddl * ddl.transpose().dot(ddl) + w_cost_smooth_dddl * dddl.transpose().dot(dddl);
-    double cost_ref = w_cost_ref * l.transpose().dot(l);
-    double cost_collision = 0;
-    
-    for (int i=0; i<obs_set.rows(); i++){
-        auto dlon = cal * obs_set(i, 0) - ds;
-        auto dlat = cal * obs_set(i, 1) - l;
-        auto square_d = cal_pow(dlon, 2) + cal_pow(dlat, 2);
-        double cost_collision_once = CalcObsCost(square_d, w_cost_collision);
-        cost_collision = cost_collision + cost_collision_once;
-    }
-    cost = cost_collision + cost_smooth + cost_ref;
-    return cost;
 }
 
 template <class T>

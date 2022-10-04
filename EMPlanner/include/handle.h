@@ -6,7 +6,7 @@
 #include <msgs/Trajectory.h>
 #include <nav_msgs/Path.h>
 
-#include <dp.h>
+#include <path_planning.h>
 namespace BehaviorDecision{
 class Handle{
     public:
@@ -22,6 +22,7 @@ class Handle{
         int node_rate;
         bool is_viz;
 
-        DP dp;
+        PathP PathP;
+        VelocityP VelocityP;
 };
 }
