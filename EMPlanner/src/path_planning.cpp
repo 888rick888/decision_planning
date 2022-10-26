@@ -80,10 +80,10 @@ void PathP::set_ego_state(const msgs::Object ego_data){
     auto item = obs_id2index.find(ego_state.id);
     if(item != obs_id2index.end()){
         int index = item->second;
-        find_match_point(index-5, index+5, ego_state, rline, match_point, match_point_index, 5);
+        cal_match_point(index-5, index+5, ego_state, rline, match_point, match_point_index, 5);
     }
     else{
-        find_match_point(0, rline.points.size(), ego_state, rline, match_point, match_point_index, 5);
+        cal_match_point(0, rline.points.size(), ego_state, rline, match_point, match_point_index, 5);
         obs_id2index.insert(std::make_pair(ego_state.id, match_point_index));
     }
     cal_project_point(ego_state, match_point, project_point);
@@ -114,10 +114,10 @@ void PathP::set_obstacles(const msgs::ObjectList obstacles_data){
             auto item = obs_id2index.find(obs.id);
             if(item != obs_id2index.end()){
                 int index = item->second;
-                find_match_point(index-10, index+10, obs, rline, match_point, match_point_index, 5);
+                cal_match_point(index-10, index+10, obs, rline, match_point, match_point_index, 5);
             }
             else{
-                find_match_point(0, rline.points.size(), obs, rline, match_point, match_point_index, 5);
+                cal_match_point(0, rline.points.size(), obs, rline, match_point, match_point_index, 5);
                 obs_id2index.insert(std::make_pair(obs.id, match_point_index));
             }
             // 根据匹配点计算投影点
@@ -178,7 +178,7 @@ void PathP::calc_startpoint_stitch_trajectory(){
 
             msgs::ReferencePoint match_point, project_point;
             int match_point_index;
-            find_match_point(0, rline.points.size(), start_point, rline, match_point, match_point_index, 5);
+            cal_match_point(0, rline.points.size(), start_point, rline, match_point, match_point_index, 5);
             cal_project_point(start_point, match_point, project_point);
             world2frenet_path(index2s, start_point, rilne, project_point, match_point_index, 3);
             start_point.header.stamp = ros::Time().fromSec(current_time.toSec()+plan_dt);
@@ -261,7 +261,7 @@ void PathP::dp(){   //输出的s， l不包含规划起点
     }
     int index = 0;
     int min_cost = 99999;
-    msg::Trajectory trajectory_temp;
+    msgs::Trajectory trajectory_temp;
     for(int i=0; i<row; i++){
         if (node_cost(i, col-1) < min_cost){
             min_cost = node_cost(i, col-1);

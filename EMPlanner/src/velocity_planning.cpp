@@ -221,7 +221,7 @@ void Convex_space(){
             break;
         }
         double cur_s = dp_speed_s[i];
-        double cur_kappa = interpolate(std::vector ab(path_index2s.begin(), path_index2s.begin()+path_index2s_end_index), trajectory_init.points[1:path_index2s_end_index].kappa, cur_s)//插值找cur_s所对应的曲率
+        double cur_kappa = interpolate_linear(std::vector ab(path_index2s.begin(), path_index2s.begin()+path_index2s_end_index), trajectory_init.points[1:path_index2s_end_index].kappa, cur_s)//插值找cur_s所对应的曲率
         auto max_speed = std::sqrt(max_lateral_accel / std::abs(cur_kappa) + 1e-10);
         double min_speed = 0;
         s_dot_lb[i] = min_speed;
@@ -232,7 +232,7 @@ void Convex_space(){
         auto obs_t = (obs_st.t_in[i] + obs_st.t_out[i]) / 2;    //取s t直线的中点， 作为obs_s obs_t的坐标
         auto obs_s = (obs_st.s_in[i] + obs_st.s_out[i]) / 2;
         auto obs_speed = (obs_st.s_out[i] - obs_st.s_in[i]) / (obs_st.t_out[i] - obs_st.t_in[i]);   //障碍物的纵向速度
-        auto dp_s = interpolate([0, std::vector ab(dp_speed_t.begin(), dp_speed_t.begin()+dp_speed_end_index)], [0, std::vector ba(dp_speed_s.begin(), dp_speed_s.begin()+dp_speed_end_index), obs_t]);
+        auto dp_s = interpolate_linear([0, std::vector ab(dp_speed_t.begin(), dp_speed_t.begin()+dp_speed_end_index)], [0, std::vector ba(dp_speed_s.begin(), dp_speed_s.begin()+dp_speed_end_index), obs_t]);
         
         int j;
         for (j=0; j<dp_speed_t.size()-1; j++){
